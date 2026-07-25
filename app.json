@@ -8,18 +8,43 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/17e28de2-8af7-4cc1-a316-7857c4918d5d",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/ghost-mascot.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sweatbuds.app",
+      "appleTeamId": "HBRW5ZSUU3",
+      "usesAppleSignIn": true,
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.sweatbuds.app"
+        ]
+      },
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["instagram-stories", "instagram"],
+        "LSApplicationQueriesSchemes": [
+          "instagram-stories",
+          "instagram"
+        ],
         "NSPhotoLibraryAddUsageDescription": "Sweatbuds saves your workout Sweatcams to your photo library when you tap Save.",
-        "NSPhotoLibraryUsageDescription": "Sweatbuds saves your workout Sweatcams to your photo library when you tap Save."
+        "NSPhotoLibraryUsageDescription": "Sweatbuds saves your workout Sweatcams to your photo library when you tap Save.",
+        "NSLocationWhenInUseUsageDescription": "Sweatbuds shows nearby gyms when you add a location.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sweatbuds reminds you to log a workout when you arrive at a saved gym.",
+        "NSLocationAlwaysUsageDescription": "Used for arrival reminders at saved gyms.",
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -29,7 +54,18 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.sweatbuds.app"
+      "package": "com.sweatbuds.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -37,6 +73,8 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
+      "@bacons/apple-targets",
       [
         "expo-build-properties",
         {
@@ -65,10 +103,57 @@
           "savePhotosPermission": "Sweatbuds saves your workout Sweatcams to your photo library when you tap Save.",
           "isAccessMediaLocationEnabled": false
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Sweatbuds reminds you to log a workout when you arrive at a saved gym.",
+          "locationWhenInUsePermission": "Sweatbuds shows nearby gyms when you add a location.",
+          "isIosBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "bundleIdentifier": "com.sweatbuds.app.widget",
+                  "targetName": "SweatbudsWidget",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.sweatbuds.app"
+                    ]
+                  }
+                },
+                {
+                  "bundleIdentifier": "com.sweatbuds.app.notifications",
+                  "targetName": "SweatbudsNotificationService",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.sweatbuds.app"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "17e28de2-8af7-4cc1-a316-7857c4918d5d"
+      }
+    },
+    "owner": "curtislee645"
   }
 }

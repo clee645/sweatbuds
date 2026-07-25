@@ -2,17 +2,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
 import { sharePartnerInvite } from '@/lib/invite';
+import { usePartnership } from '@/lib/partnership';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import { DrawerItem } from './DrawerItem';
 
 export function DrawerContent(props: DrawerContentComponentProps) {
   const router = useRouter();
   const { profile, user } = useAuth();
+  const { partner } = usePartnership();
 
   const navigate = (path: string) => {
     props.navigation.closeDrawer();
@@ -30,9 +32,22 @@ export function DrawerContent(props: DrawerContentComponentProps) {
     }
   };
 
+  const handleSupport = async () => {
+    props.navigation.closeDrawer();
+    try {
+      await Linking.openURL('mailto:support@sweatbuds.com');
+    } catch {
+      Alert.alert('No email app found', 'Please email support@sweatbuds.com.');
+    }
+  };
+
   const displayName = profile?.display_name ?? 'Friend';
   const avatarUrl = profile?.avatar_url ?? undefined;
   const initial = displayName.trim().charAt(0).toUpperCase() || '?';
+
+  const partnerName = partner?.display_name ?? '';
+  const partnerAvatarUrl = partner?.avatar_url ?? undefined;
+  const partnerInitial = partnerName.trim().charAt(0).toUpperCase() || '?';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -42,7 +57,7 @@ export function DrawerContent(props: DrawerContentComponentProps) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.profilePill}>
-          <View style={styles.avatarStack}>
+          <View style={[styles.avatarStack, styles.avatarStackPaired]}>
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.avatar} contentFit="cover" />
             ) : (
@@ -50,20 +65,34 @@ export function DrawerContent(props: DrawerContentComponentProps) {
                 <Text style={styles.avatarInitial}>{initial}</Text>
               </View>
             )}
-            <Pressable
-              onPress={handleInvite}
-              style={styles.invitePlus}
-              hitSlop={6}
-            >
-              <Ionicons name="person-add" size={14} color={colors.text} />
-            </Pressable>
+            {partner ? (
+              partnerAvatarUrl ? (
+                <Image
+                  source={{ uri: partnerAvatarUrl }}
+                  style={[styles.avatar, styles.partnerAvatar]}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={[styles.avatar, styles.avatarFallback, styles.partnerAvatar]}>
+                  <Text style={styles.avatarInitial}>{partnerInitial}</Text>
+                </View>
+              )
+            ) : (
+              <Pressable
+                onPress={handleInvite}
+                style={styles.invitePlus}
+                hitSlop={6}
+              >
+                <Ionicons name="person-add" size={22} color={colors.text} />
+              </Pressable>
+            )}
           </View>
           <View style={styles.profileText}>
             <Text style={styles.profileName} numberOfLines={1}>
               {displayName}
             </Text>
             <Text style={styles.profileHint} numberOfLines={1}>
-              Tap + to invite partner
+              {partner ? `Paired with ${partnerName}` : 'Tap + to invite partner'}
             </Text>
           </View>
         </View>
@@ -104,7 +133,7 @@ export function DrawerContent(props: DrawerContentComponentProps) {
           <DrawerItem
             icon="headset-outline"
             label="Support"
-            onPress={() => navigate('/support')}
+            onPress={handleSupport}
           />
         </View>
       </ScrollView>
@@ -136,11 +165,21 @@ const styles = StyleSheet.create({
     height: 44,
     position: 'relative',
   },
+  avatarStackPaired: {
+    width: 74,
+  },
   avatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
     backgroundColor: colors.card,
+  },
+  partnerAvatar: {
+    position: 'absolute',
+    left: 30,
+    top: 0,
+    borderWidth: 2,
+    borderColor: colors.bg,
   },
   avatarFallback: {
     alignItems: 'center',
@@ -154,11 +193,11 @@ const styles = StyleSheet.create({
   },
   invitePlus: {
     position: 'absolute',
-    right: -2,
-    top: -2,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    left: 30,
+    top: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.cardElevated,
     alignItems: 'center',
     justifyContent: 'center',

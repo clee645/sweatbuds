@@ -1,17 +1,21 @@
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThisWeekCard } from '@/components/home/ThisWeekCard';
+import { usePartnership } from '@/lib/partnership';
 import { colors, spacing, typography } from '@/lib/theme';
-import { weekProgressFromWorkouts } from '@/lib/week';
+import { getSoloWeekWindow, getWeekWindow, weekProgressFromWorkouts } from '@/lib/week';
 import type { Profile, Workout } from '@/types/db';
 import { Particles } from './Particles';
 import { PostComposition } from './PostComposition';
 
-const DISMISS_AFTER_MS = 2800;
+const FADE_IN_MS = 280;
+const HOLD_MS = 3000;
+const FADE_OUT_MS = 320;
 
 type Props = {
   workout: Workout;
@@ -29,17 +33,42 @@ export function SuccessStep({
   allWorkouts,
 }: Props) {
   const router = useRouter();
-  const userWeek = weekProgressFromWorkouts(allWorkouts, user);
+  const { partnership } = usePartnership();
+  const weekWindow = getWeekWindow(partnership) ?? getSoloWeekWindow();
+  const userWeek = weekProgressFromWorkouts(
+    allWorkouts,
+    user,
+    3,
+    weekWindow.weekStart,
+    weekWindow.weekEnd,
+  );
+  const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      router.back();
-    }, DISMISS_AFTER_MS);
-    return () => clearTimeout(t);
-  }, [router]);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const seq = Animated.sequence([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: FADE_IN_MS,
+        useNativeDriver: true,
+      }),
+      Animated.delay(HOLD_MS),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: FADE_OUT_MS,
+        useNativeDriver: true,
+      }),
+    ]);
+    seq.start(({ finished }) => {
+      if (finished) router.back();
+    });
+    return () => {
+      seq.stop();
+    };
+  }, [router, opacity]);
 
   return (
-    <View style={styles.root}>
+    <Animated.View style={[styles.root, { opacity }]}>
       <LinearGradient
         colors={['rgba(255, 90, 95, 0.18)', 'rgba(255, 90, 95, 0.04)', 'rgba(0, 0, 0, 0)']}
         start={{ x: 0.5, y: 0 }}
@@ -68,19 +97,25 @@ export function SuccessStep({
           <ThisWeekCard
             userWeek={userWeek}
             partnerWeek={null}
-            onInvitePartner={() => {}}
+            weekWindow={weekWindow}
+            hideInviteSlot
+            variant="solo"
           />
         </View>
       </SafeAreaView>
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  safe: { flex: 1, paddingHorizontal: spacing.lg },
+  safe: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'center',
+    gap: spacing.lg,
+  },
   titleWrap: {
-    paddingTop: spacing.xl,
     alignItems: 'center',
     gap: spacing.xs,
   },
@@ -94,15 +129,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   compositionWrap: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.lg,
   },
   composition: {
     width: '70%',
   },
   footer: {
-    paddingBottom: spacing.lg,
+    // sits directly below the composition, tight to the image
   },
 });

@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Dimensions, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   type SharedValue,
+  interpolate,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -12,6 +13,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useAuth } from '@/lib/auth';
+import { useWorkoutComments } from '@/lib/comments';
+import { useCommentViews } from '@/lib/commentViews';
 import { getCachedSignedUrls, getSignedUrls } from '@/lib/storage';
 import { colors, spacing, typography } from '@/lib/theme';
 import { timeAgo } from '@/lib/time';
@@ -20,6 +24,10 @@ import { WorkoutCard } from './WorkoutCard';
 
 type Props = {
   workouts: Workout[];
+  // When set to true, the stack fades + scales + lifts away to signal that
+  // the prior week is being archived. Parent should swap to the next view
+  // once the animation completes (~700ms total including settle).
+  archiving?: boolean;
 };
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -31,6 +39,13 @@ const STACK_OFFSET_Y = 10;
 const STACK_ROTATE_DEG = 5;
 const STACK_SCALE_STEP = 0.04;
 const OFFSCREEN_ROTATE_DEG = 24;
+
+// Above this count, the pagination row collapses to WINDOW_SIZE fixed slots
+// so the dots never overflow the screen. Edge slots shrink to hint at
+// off-window items.
+const WINDOW_THRESHOLD = 8;
+const WINDOW_SIZE = 7;
+type DotSizeClass = 'active' | 'near' | 'mid' | 'edge';
 
 function cardTransform(effective: number) {
   'worklet';
@@ -77,9 +92,31 @@ function AnimatedSlot({ cardIndex, floatIndex, zIndex, children }: AnimatedSlotP
   );
 }
 
-export function WorkoutCarousel({ workouts }: Props) {
+export function WorkoutCarousel({ workouts, archiving = false }: Props) {
   const router = useRouter();
+  const { user } = useAuth();
+  const { byWorkout } = useWorkoutComments();
+  const { unreadCount } = useCommentViews();
   const [activeIndex, setActiveIndex] = useState(0);
+  const archiveProgress = useSharedValue(0);
+
+  useEffect(() => {
+    archiveProgress.value = withTiming(archiving ? 1 : 0, {
+      duration: archiving ? 600 : 300,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [archiving, archiveProgress]);
+
+  const archiveStyle = useAnimatedStyle(() => {
+    const p = archiveProgress.value;
+    return {
+      opacity: 1 - p,
+      transform: [
+        { scale: interpolate(p, [0, 1], [1, 0.92]) },
+        { translateY: interpolate(p, [0, 1], [0, -20]) },
+      ],
+    };
+  });
   const [uriMap, setUriMap] = useState<Record<string, string>>(() => {
     // Seed from the in-memory signed-URL cache so the first paint already has
     // valid URIs for paths we've fetched before. Without this, the first render
@@ -171,6 +208,21 @@ export function WorkoutCarousel({ workouts }: Props) {
 
   const composedGesture = Gesture.Exclusive(swipeGesture, tapGesture);
 
+  const dotSlots = useMemo(() => {
+    const total = workouts.length;
+    if (total <= WINDOW_THRESHOLD) return null;
+    const half = (WINDOW_SIZE - 1) / 2;
+    const center = Math.min(Math.max(activeIndex, half), total - 1 - half);
+    const slots: { workoutIndex: number; sizeClass: DotSizeClass }[] = [];
+    for (let i = center - half; i <= center + half; i++) {
+      const distance = Math.abs(i - activeIndex);
+      const sizeClass: DotSizeClass =
+        distance === 0 ? 'active' : distance === 1 ? 'near' : distance === 2 ? 'mid' : 'edge';
+      slots.push({ workoutIndex: i, sizeClass });
+    }
+    return slots;
+  }, [activeIndex, workouts]);
+
   if (workouts.length === 0) return null;
 
   // Visible window: previous card + active + back stack. Each card is keyed by
@@ -195,11 +247,17 @@ export function WorkoutCarousel({ workouts }: Props) {
           : null
       }
       caption={workout.caption}
+      showCommentIcon
+      unreadCount={unreadCount(
+        workout.id,
+        byWorkout[workout.id] ?? [],
+        user?.id,
+      )}
     />
   );
 
   return (
-    <View style={styles.wrap}>
+    <Animated.View style={[styles.wrap, archiveStyle]}>
       <GestureDetector gesture={composedGesture}>
         <View style={styles.stack}>
           {visible.map(({ workout, cardIndex }) => {
@@ -223,15 +281,24 @@ export function WorkoutCarousel({ workouts }: Props) {
 
       <Text style={styles.timeAgo}>{timeAgo(active.logged_at)}</Text>
 
-      <View style={styles.dots}>
-        {workouts.map((w, i) => (
-          <View
-            key={w.id}
-            style={[styles.dot, i === activeIndex ? styles.dotActive : styles.dotInactive]}
-          />
-        ))}
-      </View>
-    </View>
+      {workouts.length >= 2 ? (
+        <View style={styles.dots}>
+          {dotSlots
+            ? dotSlots.map(({ workoutIndex, sizeClass }) => (
+                <View
+                  key={workouts[workoutIndex].id}
+                  style={[styles.dot, dotStyleFor(sizeClass)]}
+                />
+              ))
+            : workouts.map((w, i) => (
+                <View
+                  key={w.id}
+                  style={[styles.dot, i === activeIndex ? styles.dotActive : styles.dotInactive]}
+                />
+              ))}
+        </View>
+      ) : null}
+    </Animated.View>
   );
 }
 
@@ -276,4 +343,20 @@ const styles = StyleSheet.create({
   },
   dotActive: { width: 18, backgroundColor: colors.accent },
   dotInactive: { width: 6, backgroundColor: colors.textDim },
+  dotNear: { width: 6, backgroundColor: colors.textDim },
+  dotMid: { width: 5, backgroundColor: colors.textDim },
+  dotEdge: { width: 4, backgroundColor: colors.textDim, opacity: 0.6 },
 });
+
+function dotStyleFor(sizeClass: DotSizeClass) {
+  switch (sizeClass) {
+    case 'active':
+      return styles.dotActive;
+    case 'near':
+      return styles.dotNear;
+    case 'mid':
+      return styles.dotMid;
+    case 'edge':
+      return styles.dotEdge;
+  }
+}

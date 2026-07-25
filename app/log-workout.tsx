@@ -6,6 +6,7 @@ import { CameraStep } from '@/components/log/CameraStep';
 import { PreviewStep } from '@/components/log/PreviewStep';
 import { SuccessStep } from '@/components/log/SuccessStep';
 import { useAuth } from '@/lib/auth';
+import { usePartnership } from '@/lib/partnership';
 import { colors } from '@/lib/theme';
 import { createWorkout, useWorkouts } from '@/lib/workouts';
 import type { Workout } from '@/types/db';
@@ -16,6 +17,7 @@ export default function LogWorkoutScreen() {
   const router = useRouter();
   const { user, profile } = useAuth();
   const { workouts, prependWorkout } = useWorkouts();
+  const { partnership } = usePartnership();
 
   const [step, setStep] = useState<Step>('camera');
   const [selfieUri, setSelfieUri] = useState<string | null>(null);
@@ -57,6 +59,8 @@ export default function LogWorkoutScreen() {
     try {
       const workout = await createWorkout({
         userId: user.id,
+        partnershipId:
+          partnership && partnership.status === 'active' ? partnership.id : null,
         selfieUri,
         environmentUri,
         caption: caption.trim() || null,
@@ -71,7 +75,15 @@ export default function LogWorkoutScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [caption, environmentUri, prependWorkout, selfieUri, submitting, user]);
+  }, [
+    caption,
+    environmentUri,
+    partnership,
+    prependWorkout,
+    selfieUri,
+    submitting,
+    user,
+  ]);
 
   if (!user) {
     // Defensive — modal should not be reachable without an authed user.
@@ -115,6 +127,7 @@ export default function LogWorkoutScreen() {
               avatar_url: null,
               created_at: new Date().toISOString(),
               timezone: null,
+              is_pro: false,
             }
           }
           allWorkouts={workouts}

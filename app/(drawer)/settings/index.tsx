@@ -2,10 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { DrawerActions } from '@react-navigation/native';
 import Constants from 'expo-constants';
 import { Image } from 'expo-image';
+import * as Notifications from 'expo-notifications';
 import { router, useNavigation } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import type { CustomerInfo } from 'react-native-purchases';
+import RevenueCatUI from 'react-native-purchases-ui';
 
 import { DeleteAccountModal } from '@/components/settings/DeleteAccountModal';
 import { EditProfileModal } from '@/components/settings/EditProfileModal';
@@ -13,7 +17,13 @@ import { SettingsRow } from '@/components/settings/SettingsRow';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { TimezonePickerModal } from '@/components/settings/TimezonePickerModal';
 import { useAuth } from '@/lib/auth';
+import { usePartnership } from '@/lib/partnership';
+import { restorePurchases } from '@/lib/revenuecat';
+import { useSubscription } from '@/lib/subscription';
+import { supabase } from '@/lib/supabase';
 import { colors, spacing, typography } from '@/lib/theme';
+import { getCurrentWeekStartDay } from '@/lib/week';
+import { debugForcePartnerSync } from '@/lib/widget';
 
 function providerLabel(provider: string | undefined): string {
   if (!provider) return 'Email';
@@ -26,9 +36,34 @@ function cityFromZone(zone: string): string {
   return last.replace(/_/g, ' ');
 }
 
+function renewalSubtitle(info: CustomerInfo | null): string | undefined {
+  const ent = info?.entitlements.active['Sweatbuds Pro'];
+  if (!ent) return undefined;
+  if (!ent.expirationDate) return 'Lifetime';
+  const date = new Date(ent.expirationDate);
+  const label = date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  return ent.willRenew ? `Renews ${label}` : `Expires ${label}`;
+}
+
+const DAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { profile, user, signOut } = useAuth();
+  const { partnership, partner } = usePartnership();
+  const { customerInfo, isPro, refresh: refreshSubscription } = useSubscription();
 
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [timezoneOpen, setTimezoneOpen] = useState(false);
@@ -39,6 +74,7 @@ export default function SettingsScreen() {
   const initial = displayName.trim().charAt(0).toUpperCase() || '?';
   const provider = providerLabel(user?.app_metadata?.provider as string | undefined);
   const timezone = profile?.timezone ?? 'America/Los_Angeles';
+  const weekStartDay = getCurrentWeekStartDay(partnership);
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
   const handleBack = () => {
@@ -58,9 +94,6 @@ export default function SettingsScreen() {
       },
     ]);
   };
-
-  const showComingSoon = (title: string) =>
-    Alert.alert(title, 'This isn’t ready yet — check back soon.');
 
   const accountAvatar = (
     <View style={styles.avatarStack}>
@@ -102,6 +135,23 @@ export default function SettingsScreen() {
             title="How to add the widget"
             onPress={() => router.push('/settings/widget-help')}
           />
+          <SettingsRow
+            icon="refresh-outline"
+            title="Resync widget now"
+            onPress={async () => {
+              try {
+                const result = await debugForcePartnerSync({
+                  partner,
+                  partnership,
+                  weeklyTarget: partnership?.weekly_target ?? 3,
+                });
+                Alert.alert('Widget resync', result);
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                Alert.alert('Widget resync failed', message);
+              }
+            }}
+          />
         </SettingsSection>
 
         <SettingsSection label="Notifications">
@@ -110,8 +160,49 @@ export default function SettingsScreen() {
             iconBg={colors.accent}
             iconColor={colors.text}
             title="Turn on notifications"
-            subtitle="Open settings to enable"
+            subtitle="Open iOS Settings → Sweatbuds → Notifications and enable Allow Notifications, Sounds, and Badges."
             onPress={() => void Linking.openSettings()}
+          />
+          <SettingsRow
+            icon="paper-plane-outline"
+            title="Send test push"
+            subtitle="Verifies token + delivery"
+            onPress={async () => {
+              try {
+                if (!user) return;
+                const projectId = Constants.expoConfig?.extra?.eas?.projectId as
+                  | string
+                  | undefined;
+                const tokenRes = await Notifications.getExpoPushTokenAsync(
+                  projectId ? { projectId } : undefined,
+                );
+                const token = tokenRes.data;
+                const { count } = await supabase
+                  .from('device_tokens')
+                  .select('user_id', { count: 'exact', head: true })
+                  .eq('user_id', user.id);
+                const res = await fetch('https://exp.host/--/api/v2/push/send', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    to: token,
+                    title: 'Sweatbuds test',
+                    body: 'If you see this, push is working.',
+                    sound: 'default',
+                  }),
+                });
+                const json = await res.json();
+                Alert.alert(
+                  'Push diagnostic',
+                  `Token: …${token.slice(-10)}\nDB rows: ${count ?? '?'}\nResp: ${JSON.stringify(json).slice(0, 240)}`,
+                );
+              } catch (err) {
+                Alert.alert(
+                  'Push test failed',
+                  err instanceof Error ? err.message : String(err),
+                );
+              }
+            }}
           />
         </SettingsSection>
 
@@ -138,31 +229,65 @@ export default function SettingsScreen() {
             subtitle={cityFromZone(timezone)}
             onPress={() => setTimezoneOpen(true)}
           />
+          {partnership ? (
+            <SettingsRow
+              icon="calendar-outline"
+              title="Week start day"
+              subtitle={weekStartDay !== null ? DAY_NAMES[weekStartDay] : undefined}
+              onPress={() => router.push('/settings/week-start-day')}
+            />
+          ) : null}
           <SettingsRow
             icon="location-outline"
             title="Location Reminders"
             subtitle="Get reminded to log a workout when you arrive at the gym."
-            onPress={() => showComingSoon('Location Reminders')}
+            onPress={() => router.push('/settings/location-reminders')}
           />
         </SettingsSection>
 
         <SettingsSection label="Subscription">
           <SettingsRow
-            icon="checkmark-circle"
-            iconBg={colors.successSoft}
-            iconColor={colors.success}
-            title="Active"
+            icon={isPro ? 'checkmark-circle' : 'lock-closed'}
+            iconBg={isPro ? colors.successSoft : colors.cardElevated}
+            iconColor={isPro ? colors.success : colors.textMuted}
+            title={isPro ? 'Active' : 'Not subscribed'}
+            subtitle={renewalSubtitle(customerInfo)}
             accessory="none"
           />
+          {isPro ? (
+            <SettingsRow
+              icon="card-outline"
+              title="Manage Subscription"
+              onPress={async () => {
+                try {
+                  await RevenueCatUI.presentCustomerCenter();
+                  await refreshSubscription();
+                } catch (err) {
+                  Alert.alert(
+                    'Could not open',
+                    err instanceof Error ? err.message : String(err),
+                  );
+                }
+              }}
+            />
+          ) : null}
           <SettingsRow
             icon="refresh"
             title="Restore Purchases"
-            onPress={() =>
-              Alert.alert(
-                'Coming soon',
-                'Restore purchases will be available once in-app purchases are wired up.',
-              )
-            }
+            onPress={async () => {
+              const result = await restorePurchases();
+              if (result.kind === 'success') {
+                await refreshSubscription();
+                Alert.alert(
+                  'Restore complete',
+                  result.customerInfo.entitlements.active['Sweatbuds Pro']
+                    ? 'Your subscription is active.'
+                    : 'No active subscription found on this Apple ID.',
+                );
+              } else if (result.kind === 'error') {
+                Alert.alert('Restore failed', result.message);
+              }
+            }}
           />
         </SettingsSection>
 
@@ -176,12 +301,12 @@ export default function SettingsScreen() {
           <SettingsRow
             icon="lock-closed-outline"
             title="Privacy Policy"
-            onPress={() => showComingSoon('Privacy Policy')}
+            onPress={() => void Linking.openURL('https://sweatbuds.app/privacy')}
           />
           <SettingsRow
             icon="document-text-outline"
             title="Terms of Service"
-            onPress={() => showComingSoon('Terms of Service')}
+            onPress={() => void Linking.openURL('https://sweatbuds.app/terms')}
           />
         </SettingsSection>
 

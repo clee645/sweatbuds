@@ -2,15 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radii, spacing, typography } from '@/lib/theme';
+import { formatWager, type WagerRule } from '@/lib/wagers';
 
 type Props = {
+  days: number;
+  wager: WagerRule;
   onPressInfo?: () => void;
 };
 
-const BLURB =
-  'Invite your partner to unlock friendly wagers like coffee, dinner, or custom rewards.';
-
-export function StakesCard({ onPressInfo }: Props) {
+export function StakesCard({ days, wager, onPressInfo }: Props) {
+  const body = `Work out ${days}+ days this week or owe ${formatWager(wager)}.`;
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -22,7 +23,7 @@ export function StakesCard({ onPressInfo }: Props) {
           <Ionicons name="information-circle-outline" size={18} color={colors.textMuted} />
         </Pressable>
       </View>
-      <Text style={styles.body}>{BLURB}</Text>
+      <Text style={styles.body}>{body}</Text>
     </View>
   );
 }

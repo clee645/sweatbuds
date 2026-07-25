@@ -5,13 +5,25 @@ import { colors, radii, spacing, typography } from '@/lib/theme';
 
 type Props = {
   workoutCount: number;
+  streak: number;
+  hasPartner: boolean;
   onOpenDrawer: () => void;
   onPressInvite: () => void;
   onLongPress?: () => void;
 };
 
-export function HomeHeader({ workoutCount, onOpenDrawer, onPressInvite, onLongPress }: Props) {
-  const hasWorkouts = workoutCount > 0;
+export function HomeHeader({
+  workoutCount,
+  streak,
+  hasPartner,
+  onOpenDrawer,
+  onPressInvite,
+  onLongPress,
+}: Props) {
+  // Once paired, always show the count badge — including 0. The "Invite
+  // Partner" CTA is only meaningful before a partnership exists.
+  const showCountPill = hasPartner || workoutCount > 0;
+  const showStreakPill = streak > 0;
 
   return (
     <View style={styles.row} onTouchEnd={undefined}>
@@ -25,14 +37,22 @@ export function HomeHeader({ workoutCount, onOpenDrawer, onPressInvite, onLongPr
         <Ionicons name="menu" size={22} color={colors.text} />
       </Pressable>
 
-      {hasWorkouts ? (
-        <Pressable style={styles.workoutsPill} onPress={onPressInvite} hitSlop={6}>
+      {showStreakPill ? (
+        <View style={styles.workoutsPill}>
+          <Text style={styles.workoutsPillEmoji}>🔥</Text>
+          <Text style={styles.workoutsPillText}>
+            <Text style={styles.workoutsPillCount}>{streak}</Text>{' '}
+            {streak === 1 ? 'week' : 'weeks'}
+          </Text>
+        </View>
+      ) : showCountPill ? (
+        <View style={styles.workoutsPill}>
           <Text style={styles.workoutsPillEmoji}>💪</Text>
           <Text style={styles.workoutsPillText}>
             <Text style={styles.workoutsPillCount}>{workoutCount}</Text>{' '}
             {workoutCount === 1 ? 'Workout' : 'Workouts'}
           </Text>
-        </Pressable>
+        </View>
       ) : (
         <Pressable style={styles.invitePill} onPress={onPressInvite} hitSlop={6}>
           <Ionicons name="person-add-outline" size={14} color={colors.accent} />

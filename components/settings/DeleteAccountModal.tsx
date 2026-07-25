@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import { useAuth } from '@/lib/auth';
+import { clearOnboardingSeen, clearPaywallSeen } from '@/lib/onboarding';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -46,6 +47,10 @@ export function DeleteAccountModal({ visible, onClose }: Props) {
         const text = await res.text();
         throw new Error(text || `Request failed (${res.status})`);
       }
+      // Forget onboarding/paywall so re-signing up with the same identity starts
+      // fresh (a normal sign-out keeps these, by design).
+      await clearOnboardingSeen();
+      await clearPaywallSeen();
       await signOut();
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Please try again.';

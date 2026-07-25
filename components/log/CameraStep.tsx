@@ -6,10 +6,12 @@ import {
   type FlashMode,
 } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Linking,
   Pressable,
@@ -160,6 +162,39 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
     setFacing((f) => (f === 'front' ? 'back' : 'front'));
   }, [phase]);
 
+  // Dev-only escape hatch for the simulator (which has no working camera): pick
+  // a selfie + environment image from the photo library and feed them into the
+  // same onCapturesComplete path the real capture flow uses.
+  const handleDevUpload = useCallback(async () => {
+    if (phase !== 'idle') return;
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Photo library access needed', 'Allow access to pick test images.');
+        return;
+      }
+
+      const selfie = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.9,
+      });
+      if (selfie.canceled || !selfie.assets?.[0]?.uri) return;
+
+      const env = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.9,
+      });
+      if (env.canceled || !env.assets?.[0]?.uri) return;
+
+      onCapturesComplete({
+        selfieUri: selfie.assets[0].uri,
+        environmentUri: env.assets[0].uri,
+      });
+    } catch (e) {
+      Alert.alert('Upload failed', e instanceof Error ? e.message : String(e));
+    }
+  }, [onCapturesComplete, phase]);
+
   const handleFlash = useCallback(() => {
     if (phase !== 'idle') return;
     setFlash((f) => (f === 'off' ? 'on' : 'off'));
@@ -225,7 +260,18 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
           <Ionicons name="chevron-down" size={24} color={colors.text} />
         </Pressable>
         <Text style={styles.wordmark}>Sweatbuds</Text>
-        <View style={styles.headerSpacer} />
+        {__DEV__ ? (
+          <Pressable
+            onPress={handleDevUpload}
+            disabled={isCapturing}
+            style={({ pressed }) => [styles.headerBtn, pressed && styles.pressed]}
+            hitSlop={8}
+          >
+            <Ionicons name="image-outline" size={24} color={colors.text} />
+          </Pressable>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
       <View style={styles.cameraWrap}>

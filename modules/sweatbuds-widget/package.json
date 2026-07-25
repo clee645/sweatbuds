@@ -1,0 +1,8 @@
+{
+  "name": "sweatbuds-widget",
+  "version": "0.1.0",
+  "description": "App-Group bridge that feeds the Sweatbuds iOS home-screen widget",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true
+}

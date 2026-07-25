@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
@@ -8,7 +9,9 @@ type Props = {
   environmentUri?: string | null;
   caption?: string | null;
   style?: StyleProp<ViewStyle>;
-  envSize?: 'default' | 'large';
+  envSize?: 'default' | 'large' | 'compact';
+  showCommentIcon?: boolean;
+  unreadCount?: number;
 };
 
 export function WorkoutCard({
@@ -17,6 +20,8 @@ export function WorkoutCard({
   caption,
   style,
   envSize = 'default',
+  showCommentIcon = false,
+  unreadCount = 0,
 }: Props) {
   return (
     <View style={[styles.card, style]}>
@@ -32,6 +37,7 @@ export function WorkoutCard({
           style={[
             styles.envWrap,
             envSize === 'large' && styles.envWrapLarge,
+            envSize === 'compact' && styles.envWrapCompact,
           ]}
         >
           <Image
@@ -40,6 +46,19 @@ export function WorkoutCard({
             contentFit="cover"
             cachePolicy="memory-disk"
           />
+        </View>
+      ) : null}
+
+      {showCommentIcon ? (
+        <View style={styles.commentBadge} pointerEvents="none">
+          <Ionicons name="chatbox-outline" size={18} color="#FFFFFF" />
+          {unreadCount > 0 ? (
+            <View style={styles.unreadDot}>
+              <Text style={styles.unreadCount} numberOfLines={1}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -87,7 +106,52 @@ const styles = StyleSheet.create({
     width: 105,
     height: 140,
   },
+  envWrapCompact: {
+    width: 44,
+    height: 60,
+    borderRadius: radii.xs,
+    top: spacing.sm,
+    left: spacing.sm,
+    borderWidth: 0.5,
+  },
   env: { width: '100%', height: '100%' },
+  commentBadge: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(28, 28, 30, 0.72)',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  unreadDot: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: colors.danger,
+    borderWidth: 1.5,
+    borderColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadCount: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
+    includeFontPadding: false,
+  },
   captionWrap: {
     position: 'absolute',
     bottom: spacing.lg,

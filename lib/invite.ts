@@ -7,7 +7,7 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 6;
 const CODE_ALPHABET_SET = new Set(CODE_ALPHABET);
 
-function generateInviteCode(): string {
+export function generateInviteCode(): string {
   let out = '';
   for (let i = 0; i < CODE_LENGTH; i++) {
     out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
@@ -62,35 +62,36 @@ export async function sharePartnerInvite(userId: string): Promise<void> {
   await Share.share({ message });
 }
 
-export async function pairWithCode(currentUserId: string, rawCode: string): Promise<Partnership> {
+// Redemption goes through a SECURITY DEFINER RPC because the partnerships
+// SELECT/UPDATE RLS policies require the caller to already be a member —
+// which the joining user isn't yet. The function does the lookup, validation,
+// and update atomically. See supabase/migrations/0010_redeem_invite_rpc.sql.
+export async function pairWithCode(rawCode: string): Promise<Partnership> {
   const code = normalizeCode(rawCode);
   if (!isCompleteCode(code)) {
     throw new Error('Enter a complete 6-character code.');
   }
 
-  const { data: row, error: lookupError } = await supabase
-    .from('partnerships')
-    .select('id, user_a, user_b, invite_code, status, weekly_target, created_at')
-    .eq('invite_code', code)
-    .eq('status', 'pending')
-    .is('user_b', null)
-    .limit(1)
-    .maybeSingle();
-
-  if (lookupError) throw lookupError;
-  if (!row) throw new Error('Code not found or already redeemed.');
-  if (row.user_a === currentUserId) throw new Error("That's your own code.");
-
-  const { data: updated, error: updateError } = await supabase
-    .from('partnerships')
-    .update({ user_b: currentUserId, status: 'active' })
-    .eq('id', row.id)
-    .select('id, user_a, user_b, invite_code, status, weekly_target, created_at')
-    .single();
-
-  if (updateError) throw updateError;
-  if (!updated) throw new Error('Pairing failed. Try again.');
-  return updated as Partnership;
+  const { data, error } = await supabase.rpc('redeem_invite_code', { code });
+  if (error) {
+    if (error.code === 'P0001') {
+      throw new Error("You're already paired. Leave your current team to join a new one.");
+    }
+    if (error.code === 'P0002') {
+      throw new Error("That's your own code.");
+    }
+    if (error.code === 'P0003') {
+      throw new Error('Code not found or already redeemed.');
+    }
+    if (error.code === 'P0004') {
+      throw new Error(
+        'A subscription is required to pair. Subscribe to unlock Sweatbuds for both of you.',
+      );
+    }
+    throw error;
+  }
+  if (!data) throw new Error('Pairing failed. Try again.');
+  return data as Partnership;
 }
 
 export async function unpairPartnership(partnershipId: string): Promise<void> {

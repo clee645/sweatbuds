@@ -48,10 +48,9 @@ const styles = StyleSheet.create({
   },
   card: {
     width: 220,
-    flex: 1,
     backgroundColor: colors.card,
     borderRadius: radii.xl,
-    paddingVertical: spacing.xxxl,
+    paddingVertical: spacing.xxl,
     paddingHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',

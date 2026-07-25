@@ -21,6 +21,11 @@ export const colors = {
   danger: '#EF4444',
   dangerSoft: 'rgba(239, 68, 68, 0.20)',
   warning: '#F59E0B',
+  // Paywall accent — kept as `orange*` keys for back-compat, but valued to the
+  // Airbnb-red brand accent so the whole paywall flow renders red.
+  orange: '#FF5A5F',
+  orangeSoft: 'rgba(255, 90, 95, 0.16)',
+  orangeBorder: 'rgba(255, 90, 95, 0.55)',
 } as const;
 
 export const radii = {

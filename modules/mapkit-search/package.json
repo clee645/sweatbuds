@@ -1,0 +1,8 @@
+{
+  "name": "mapkit-search",
+  "version": "0.1.0",
+  "description": "Apple MapKit local search bridge for Sweatbuds",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true
+}

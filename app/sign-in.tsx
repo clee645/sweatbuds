@@ -1,41 +1,89 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Redirect } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Redirect, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useAuth } from '@/lib/auth';
+import { NoAccountError, useAuth } from '@/lib/auth';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
-export default function SignInScreen() {
-  const { session, signInWithGoogle } = useAuth();
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type Provider = 'apple' | 'google';
 
-  if (session) {
+export default function SignInScreen() {
+  const { session, signInWithApple, signInWithGoogle } = useAuth();
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState<Provider | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [noAccount, setNoAccount] = useState(false);
+
+  // Don't redirect while a sign-in is in flight or after we've ejected a
+  // just-created account — the OAuth call briefly sets a session before we sign
+  // it back out, and redirecting on that transient session would flash Home.
+  if (session && submitting === null && !noAccount) {
     return <Redirect href="/" />;
   }
 
-  const handlePress = async () => {
+  const goToOnboarding = () => router.replace('/onboarding/welcome');
+
+  const handlePress = async (provider: Provider) => {
     if (submitting) return;
     setError(null);
-    setSubmitting(true);
+    setNoAccount(false);
+    setSubmitting(provider);
     try {
-      await signInWithGoogle();
+      await (provider === 'apple'
+        ? signInWithApple({ requireExisting: true })
+        : signInWithGoogle({ requireExisting: true }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sign-in failed. Try again.');
+      if (e instanceof NoAccountError) {
+        setNoAccount(true);
+      } else {
+        setError(e instanceof Error ? e.message : 'Sign-in failed. Try again.');
+      }
     } finally {
-      setSubmitting(false);
+      setSubmitting(null);
     }
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.headerWrap}>
+        <Pressable
+          onPress={goToOnboarding}
+          hitSlop={12}
+          style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Back to onboarding"
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
+        </Pressable>
         <Text style={styles.wordmark}>Sweatbuds</Text>
       </View>
 
       <View style={styles.heroWrap}>
+        <Image
+          source={require('../assets/ghost-mascot.png')}
+          style={styles.ghost}
+        />
         <Text style={styles.title}>Log workouts{'\n'}with your partner.</Text>
         <Text style={styles.subtitle}>
           One tap. Two photos. Both of you stay on track.
@@ -43,21 +91,42 @@ export default function SignInScreen() {
       </View>
 
       <View style={styles.footer}>
+        {Platform.OS === 'ios' ? (
+          <Pressable
+            onPress={() => handlePress('apple')}
+            disabled={submitting !== null}
+            style={({ pressed }) => [
+              styles.authBtn,
+              pressed && styles.pressed,
+              submitting !== null && styles.disabled,
+            ]}
+          >
+            {submitting === 'apple' ? (
+              <ActivityIndicator color="#1F1F1F" />
+            ) : (
+              <>
+                <Ionicons name="logo-apple" size={20} color="#1F1F1F" />
+                <Text style={styles.authLabel}>Continue with Apple</Text>
+              </>
+            )}
+          </Pressable>
+        ) : null}
+
         <Pressable
-          onPress={handlePress}
-          disabled={submitting}
+          onPress={() => handlePress('google')}
+          disabled={submitting !== null}
           style={({ pressed }) => [
-            styles.googleBtn,
+            styles.authBtn,
             pressed && styles.pressed,
-            submitting && styles.disabled,
+            submitting !== null && styles.disabled,
           ]}
         >
-          {submitting ? (
+          {submitting === 'google' ? (
             <ActivityIndicator color="#1F1F1F" />
           ) : (
             <>
               <Ionicons name="logo-google" size={20} color="#1F1F1F" />
-              <Text style={styles.googleLabel}>Continue with Google</Text>
+              <Text style={styles.authLabel}>Continue with Google</Text>
             </>
           )}
         </Pressable>
@@ -65,10 +134,91 @@ export default function SignInScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Text style={styles.fineprint}>
-          By continuing you agree to our terms.
+          By continuing you agree to our{' '}
+          <Text
+            style={styles.fineprintLink}
+            onPress={() => void Linking.openURL('https://sweatbuds.app/terms')}
+          >
+            Terms
+          </Text>
+          {' '}and{' '}
+          <Text
+            style={styles.fineprintLink}
+            onPress={() => void Linking.openURL('https://sweatbuds.app/privacy')}
+          >
+            Privacy Policy
+          </Text>
+          .
         </Text>
       </View>
+
+      {noAccount ? <NoAccountToast onHidden={() => setNoAccount(false)} /> : null}
     </SafeAreaView>
+  );
+}
+
+const TOAST_VISIBLE_MS = 4200;
+const TOAST_SLIDE_MS = 260;
+// Enough to park the full-height banner fully below the screen while hidden.
+const TOAST_OFFSET = 260;
+
+// Temporary red banner that spans the entire bottom of the screen, slides up,
+// holds, then slides back down and unmounts itself via onHidden. One-shot per
+// mount — the parent gates mounting on `noAccount`, so a fresh instance animates
+// each time.
+function NoAccountToast({ onHidden }: { onHidden: () => void }) {
+  const insets = useSafeAreaInsets();
+  const translateY = useSharedValue(TOAST_OFFSET);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+
+    const slideIn = { duration: TOAST_SLIDE_MS, easing: Easing.out(Easing.cubic) };
+    const slideOut = { duration: TOAST_SLIDE_MS, easing: Easing.in(Easing.cubic) };
+
+    // A single sequence per value: slide/fade in, hold, then slide/fade out.
+    // Assigning `.value` twice would just cancel the first animation, so the
+    // in + out phases must live in one withSequence().
+    translateY.value = withSequence(
+      withTiming(0, slideIn),
+      withDelay(TOAST_VISIBLE_MS, withTiming(TOAST_OFFSET, slideOut)),
+    );
+    opacity.value = withSequence(
+      withTiming(1, slideIn),
+      withDelay(
+        TOAST_VISIBLE_MS,
+        withTiming(0, slideOut, (finished) => {
+          'worklet';
+          if (finished) runOnJS(onHidden)();
+        }),
+      ),
+    );
+    // Run once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.toastRoot, { bottom: -insets.bottom }, animatedStyle]}
+    >
+      <View
+        style={[
+          styles.toastBanner,
+          { paddingBottom: insets.bottom + spacing.md },
+        ]}
+      >
+        <Text style={styles.toastText}>
+          No account found. Please complete onboarding first.
+        </Text>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -81,6 +231,16 @@ const styles = StyleSheet.create({
   headerWrap: {
     paddingTop: spacing.xl,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backBtn: {
+    position: 'absolute',
+    left: 0,
+    top: spacing.xl - 4,
+    height: 40,
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   wordmark: {
     fontSize: 22,
@@ -94,6 +254,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
+  },
+  ghost: {
+    width: 120,
+    height: 120,
+    resizeMode: 'contain',
   },
   title: {
     ...typography.display,
@@ -109,10 +274,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   footer: {
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.md,
     gap: spacing.md,
   },
-  googleBtn: {
+  authBtn: {
     height: 54,
     borderRadius: radii.pill,
     backgroundColor: '#FFFFFF',
@@ -121,7 +286,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  googleLabel: {
+  authLabel: {
     color: '#1F1F1F',
     fontSize: 16,
     fontWeight: '600',
@@ -133,10 +298,36 @@ const styles = StyleSheet.create({
     color: colors.danger,
     textAlign: 'center',
   },
+  // Full-bleed: cancel the screen's horizontal padding so the banner spans the
+  // entire width. `bottom` is overridden inline to reach past the safe area.
+  toastRoot: {
+    position: 'absolute',
+    left: -spacing.lg,
+    right: -spacing.lg,
+    zIndex: 100,
+  },
+  toastBanner: {
+    width: '100%',
+    backgroundColor: colors.danger,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  toastText: {
+    ...typography.bodyStrong,
+    color: '#FFFFFF',
+    fontSize: 13,
+    textAlign: 'center',
+  },
   fineprint: {
     ...typography.caption,
     color: colors.textDim,
     textAlign: 'center',
     fontSize: 12,
+  },
+  fineprintLink: {
+    color: colors.text,
+    textDecorationLine: 'underline',
   },
 });
