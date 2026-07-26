@@ -3,7 +3,6 @@ import type { Partnership, PartnershipAnchorHistory, Workout } from '@/types/db'
 import {
   bucketWorkoutsByPartnershipWeek,
   distinctDaysPerUser,
-  isoLocalDate,
 } from './historyWeek';
 import { supabase } from './supabase';
 import { formatWager } from './wagers';
@@ -14,6 +13,9 @@ type SettleArgs = {
   workouts: Workout[];
   userId: string | null | undefined;
   partnerId: string | null | undefined;
+  // The partnership's canonical zone. Both devices MUST pass the same value —
+  // it determines `week_start`, which is the ledger's dedupe key.
+  tz: string;
   now?: Date;
 };
 
@@ -26,6 +28,11 @@ export type SettleResult = { inserted: number };
 // `unique(partnership_id, week_start)` constraint + `ignoreDuplicates` collapse
 // the race to a single row.
 //
+// That claim only holds because `week_start` is derived from the PARTNERSHIP's
+// timezone. When it was device-local, partners in different zones produced
+// different keys, the unique constraint never fired, and one week could settle
+// twice with opposite winners.
+//
 // A row is written ONLY when exactly one partner missed the weekly goal — the
 // partner who met it is recorded as `winner_user_id` (they are owed) and the
 // misser owes the stake. Both-hit and both-missed weeks produce no row (a wash).
@@ -35,6 +42,7 @@ export async function settleCompletedWeeks({
   workouts,
   userId,
   partnerId,
+  tz,
   now = new Date(),
 }: SettleArgs): Promise<SettleResult> {
   const none: SettleResult = { inserted: 0 };
@@ -52,7 +60,7 @@ export async function settleCompletedWeeks({
   // Only consider this partnership's shared workouts (belt-and-suspenders;
   // bucketing already drops pre-pair rows via paired_at).
   const mine = workouts.filter((w) => w.partnership_id === partnership.id);
-  const buckets = bucketWorkoutsByPartnershipWeek(mine, partnership, anchorHistory, now);
+  const buckets = bucketWorkoutsByPartnershipWeek(mine, partnership, anchorHistory, tz, now);
 
   // Completed weeks whose end lands strictly after the ledger epoch. `weekEnd`
   // is exclusive local-midnight of the day after the bucket's last day.
@@ -61,7 +69,7 @@ export async function settleCompletedWeeks({
   );
   if (eligible.length === 0) return none;
 
-  const keys = eligible.map((b) => isoLocalDate(b.weekStart));
+  const keys = eligible.map((b) => b.startYmd);
   const { data: existing, error: existingError } = await supabase
     .from('wagers')
     .select('week_start')
@@ -85,9 +93,14 @@ export async function settleCompletedWeeks({
   }[] = [];
 
   for (const b of eligible) {
-    const key = isoLocalDate(b.weekStart);
+    const key = b.startYmd;
     if (existingSet.has(key)) continue;
-    const { a: userDays, b: partnerDays } = distinctDaysPerUser(b.workouts, userId, partnerId);
+    const { a: userDays, b: partnerDays } = distinctDaysPerUser(
+      b.workouts,
+      userId,
+      partnerId,
+      tz,
+    );
     const userMet = userDays >= target;
     const partnerMet = partnerDays >= target;
     // Both hit or both missed → nobody owes; no ledger row.

@@ -33,6 +33,13 @@ export function useAccessGate(): AccessGate {
   const unlocked =
     demoUnlocked || isPro || profile?.is_pro === true || partner?.is_pro === true;
 
+  // Once any source says unlocked there is nothing left to wait for, so don't
+  // keep reporting `loading` and hold the caller on BrandedSplash. This matters
+  // offline: profiles.is_pro is the durable bridge (written server-side by the
+  // revenuecat-webhook / sync-subscription, survives reinstall), and it used to
+  // be stuck behind a RevenueCat round-trip that can't complete without network.
+  if (unlocked) return { unlocked: true, loading: false };
+
   return {
     unlocked,
     loading: subscriptionLoading || partnershipLoading || demoLoading,

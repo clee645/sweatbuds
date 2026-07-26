@@ -6,6 +6,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { sharePartnerInvite } from '@/lib/invite';
 import { usePartnership } from '@/lib/partnership';
 import { colors, radii, spacing, typography } from '@/lib/theme';
@@ -27,7 +28,7 @@ export function DrawerContent(props: DrawerContentComponentProps) {
     try {
       await sharePartnerInvite(user.id);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Please try again.';
+      const message = toUserMessage(e);
       Alert.alert('Could not create invite', message);
     }
   };

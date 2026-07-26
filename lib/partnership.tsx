@@ -12,16 +12,22 @@ import {
 
 import { useAuth } from './auth';
 import { supabase } from './supabase';
-import { getCurrentWeekStartDay, getWeekWindow, nextDayOnOrAfter } from './week';
+import {
+  getCurrentWeekStartDay,
+  getWeekWindow,
+  nextDayOnOrAfterYmd,
+  resolveWeekTimezone,
+} from './week';
+import { addZonedDays, deviceTimezone, zonedMidnightUtc } from './zonedTime';
 import type { Partnership, PartnershipAnchorHistory, Profile } from '@/types/db';
 
 const SELECT_COLUMNS =
-  'id, user_a, user_b, invite_code, status, weekly_target, wager_quantity, wager_text, wager_emoji, created_at, paired_at, week_anchor_at, week_anchor_pending_at, wager_ledger_since';
+  'id, user_a, user_b, invite_code, status, weekly_target, wager_quantity, wager_text, wager_emoji, created_at, paired_at, week_anchor_at, week_anchor_pending_at, wager_ledger_since, timezone';
 
 const ANCHOR_HISTORY_COLUMNS =
   'id, partnership_id, anchor_at, effective_until, created_at';
 
-const PROFILE_COLUMNS = 'id, display_name, avatar_url, created_at, timezone, is_pro';
+const PROFILE_COLUMNS = 'id, display_name, avatar_url, created_at, timezone, timezone_set_by_user, is_pro';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 6;
@@ -56,6 +62,10 @@ type PartnershipContextValue = {
   partnership: Partnership | null;
   partner: Profile | null;
   anchorHistory: PartnershipAnchorHistory[];
+  // The zone every week/day computation for this couple must resolve against.
+  // Read it from here rather than re-deriving per screen, so both partners'
+  // devices agree no matter where they are.
+  weekTimezone: string;
   loading: boolean;
   refresh: () => Promise<void>;
   update: (fields: PartnershipUpdateFields) => Promise<void>;
@@ -79,7 +89,7 @@ export type FreshlyEnded = {
 const PartnershipContext = createContext<PartnershipContextValue | undefined>(undefined);
 
 export function PartnershipProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const userId = user?.id ?? null;
 
   const [partnership, setPartnership] = useState<Partnership | null>(null);
@@ -98,6 +108,13 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setHasLoaded(false);
   }, [userId]);
+
+  // partnership.timezone -> profile.timezone -> device zone. Resolved once
+  // here so every consumer of this context agrees.
+  const weekTimezone = useMemo(
+    () => resolveWeekTimezone(partnership, profile),
+    [partnership, profile],
+  );
 
   const partnershipRef = useRef<Partnership | null>(null);
   const isFirstLoadRef = useRef(true);
@@ -219,11 +236,13 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       }
 
       isFirstLoadRef.current = false;
-    } catch {
-      setPartnership(null);
-      setPartner(null);
-      setAnchorHistory([]);
-      partnershipRef.current = null;
+    } catch (err) {
+      // A failed fetch is NOT the same as "no partnership". Nulling here used to
+      // make an offline paired user look unpaired, and — because useAccessGate
+      // reads partner?.is_pro — could drop a partner-unlocked user to LockedHome
+      // purely because their network blipped. Retain last-known-good state and
+      // let the next refresh (foreground/realtime) reconcile.
+      if (__DEV__) console.warn('[partnership] refresh failed', err);
     } finally {
       setHasLoaded(true);
     }
@@ -334,7 +353,12 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
         const code = generateInviteCode();
         const { data, error } = await supabase
           .from('partnerships')
-          .insert({ user_a: userId, invite_code: code, ...fields })
+          .insert({
+            user_a: userId,
+            invite_code: code,
+            timezone: deviceTimezone(),
+            ...fields,
+          })
           .select(SELECT_COLUMNS)
           .single();
         if (!error && data) {
@@ -359,16 +383,19 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       if (day < 0 || day > 6 || !Number.isInteger(day)) {
         throw new Error('Invalid day');
       }
-      const currentDay = getCurrentWeekStartDay(partnership);
+      const currentDay = getCurrentWeekStartDay(partnership, weekTimezone);
       if (currentDay === day) return 'noop';
 
       // Anchor the new pending date to the END of the current cycle, not
       // today — guarantees the in-progress week never shrinks below 7 days.
-      const window = getWeekWindow(partnership, new Date());
+      const window = getWeekWindow(partnership, weekTimezone, new Date());
       if (!window) throw new Error('No active week');
-      const cycleEnd = new Date(window.weekStart);
-      cycleEnd.setDate(cycleEnd.getDate() + 7);
-      const next = nextDayOnOrAfter(day, cycleEnd);
+      const cycleEndYmd = addZonedDays(window.startYmd, 7);
+      const nextYmd = nextDayOnOrAfterYmd(day, cycleEndYmd);
+      // Persist the absolute instant of local midnight IN THE COUPLE'S ZONE.
+      // Writing device-local midnight is what made the partner's settings
+      // screen show a different day than the one actually chosen.
+      const next = zonedMidnightUtc(nextYmd, weekTimezone);
 
       const { data, error } = await supabase
         .from('partnerships')
@@ -381,7 +408,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       partnershipRef.current = data as Partnership;
       return 'updated';
     },
-    [userId, partnership],
+    [userId, partnership, weekTimezone],
   );
 
   const applyAnchorPromotion = useCallback(
@@ -409,6 +436,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       partnership,
       partner,
       anchorHistory,
+      weekTimezone,
       loading,
       refresh,
       update,
@@ -423,6 +451,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       partnership,
       partner,
       anchorHistory,
+      weekTimezone,
       loading,
       refresh,
       update,
@@ -442,4 +471,9 @@ export function usePartnership(): PartnershipContextValue {
   const ctx = useContext(PartnershipContext);
   if (!ctx) throw new Error('usePartnership must be used within PartnershipProvider');
   return ctx;
+}
+
+// Shorthand for the many screens that only need the zone to feed week math.
+export function useWeekTimezone(): string {
+  return usePartnership().weekTimezone;
 }

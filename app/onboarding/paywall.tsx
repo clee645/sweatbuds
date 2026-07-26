@@ -19,6 +19,7 @@ import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
 import { PlanCard } from '@/components/onboarding/PlanCard';
 import { TrialTimeline } from '@/components/onboarding/TrialTimeline';
 import { matchesDemoCode, setDemoUnlocked } from '@/lib/demoMode';
+import { toUserMessage } from '@/lib/errors';
 import { setPaywallSeen } from '@/lib/onboarding';
 import { redeemPromoCode } from '@/lib/promo';
 import {
@@ -137,7 +138,7 @@ export default function PaywallScreen() {
         await finishPaywall();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open paywall');
+      setError(toUserMessage(err, 'Could not open paywall'));
     }
   };
 

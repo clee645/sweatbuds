@@ -24,6 +24,7 @@ import Animated, {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NoAccountError, useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
 type Provider = 'apple' | 'google';
@@ -57,7 +58,7 @@ export default function SignInScreen() {
       if (e instanceof NoAccountError) {
         setNoAccount(true);
       } else {
-        setError(e instanceof Error ? e.message : 'Sign-in failed. Try again.');
+        setError(toUserMessage(e, 'Sign-in failed. Try again.'));
       }
     } finally {
       setSubmitting(null);

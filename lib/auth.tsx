@@ -92,7 +92,7 @@ async function rejectNewAccount(): Promise<void> {
   await supabase.auth.signOut();
 }
 
-const PROFILE_COLUMNS = 'id, display_name, avatar_url, created_at, timezone, is_pro';
+const PROFILE_COLUMNS = 'id, display_name, avatar_url, created_at, timezone, timezone_set_by_user, is_pro';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -145,8 +145,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select(PROFILE_COLUMNS)
       .eq('id', userId)
       .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setProfile((data as Profile | null) ?? null);
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        // Only clear on a definitive "no row" answer. On a network error keep
+        // the last-known profile so the profile.is_pro access bridge survives
+        // going offline.
+        if (error) {
+          if (__DEV__) console.warn('[auth] profile fetch failed', error);
+          return;
+        }
+        setProfile((data as Profile | null) ?? null);
       });
     void registerPushToken(userId).catch(() => {
       // Permission denied or simulator — leave it; widget falls back to foreground poll.
@@ -160,11 +168,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => {
     const userId = session?.user?.id;
     if (!userId) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select(PROFILE_COLUMNS)
       .eq('id', userId)
       .maybeSingle();
+    // See above: don't discard a good profile because the network failed.
+    if (error) {
+      if (__DEV__) console.warn('[auth] profile refresh failed', error);
+      return;
+    }
     setProfile((data as Profile | null) ?? null);
   }, [session?.user?.id]);
 

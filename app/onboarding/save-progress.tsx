@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { setOnboardingSeen } from '@/lib/onboarding';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -40,7 +41,7 @@ export default function SaveProgressScreen() {
         : signInWithGoogle({ markCompleted: true }));
       await setOnboardingSeen();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sign-up failed. Try again.');
+      setError(toUserMessage(e, 'Sign-up failed. Try again.'));
     } finally {
       setSubmitting(null);
     }

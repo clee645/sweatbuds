@@ -1,3 +1,11 @@
+import {
+  addZonedDays,
+  deviceTimezone,
+  diffZonedDays,
+  zonedDayOfWeek,
+  zonedMidnightUtc,
+  zonedYmd,
+} from './zonedTime';
 import type {
   Partnership,
   PartnershipAnchorHistory,
@@ -7,7 +15,14 @@ import type {
   Workout,
 } from '@/types/db';
 
-const MS_PER_DAY = 86_400_000;
+// All week math resolves calendar days against ONE timezone shared by the
+// couple, never the reading device's zone. Boundaries are exposed as Date
+// objects, but they are absolute UTC instants (the moment local midnight
+// occurs in that zone) — so both partners' devices produce byte-identical
+// boundaries and therefore identical goal-hit, streak and wager outcomes.
+//
+// Internally everything strides on "YYYY-MM-DD" strings via addZonedDays, so
+// a 23- or 25-hour DST day never shifts a boundary.
 
 const JS_DAY_TO_KEY: Record<number, WeekdayKey> = {
   0: 'S2',
@@ -19,43 +34,97 @@ const JS_DAY_TO_KEY: Record<number, WeekdayKey> = {
   6: 'S1',
 };
 
-export function getWeekdayKeyFromDate(date: Date): WeekdayKey {
-  return JS_DAY_TO_KEY[date.getDay()];
+// The zone every calendar-day decision for this couple resolves against.
+// partnership.timezone is authoritative once set; profiles.timezone is the
+// pre-migration fallback; the device zone is the last resort for a brand-new
+// solo user who has neither.
+export function resolveWeekTimezone(
+  partnership: Partnership | null | undefined,
+  profile?: Profile | null,
+): string {
+  return partnership?.timezone || profile?.timezone || deviceTimezone();
 }
 
-function toLocalMidnight(iso: string): Date | null {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  return d;
+// THE definition of "which day did this workout count for".
+//
+// `logged_date` is stamped server-side at insert in the logger's own timezone
+// (migration 0027) and is immutable — a partner in Tokyo who trained Tuesday
+// morning gets Tuesday, on every device, forever. Nothing here recomputes it,
+// which is what makes moving cities or fixing your timezone safe.
+//
+// `fallbackTz` is only consulted for rows logged before 0027 shipped. Once the
+// backfill completes and logged_date is NOT NULL, this parameter and every
+// `tz` argument threaded through the counting functions below can be deleted.
+export function workoutYmd(w: Workout, fallbackTz: string): string {
+  return w.logged_date ?? zonedYmd(w.logged_at, fallbackTz);
 }
 
-// 00:00 local of the day the couple paired. Used to drop pre-pair workouts;
+export function getWeekdayKeyFromYmd(ymd: string): WeekdayKey {
+  return JS_DAY_TO_KEY[zonedDayOfWeek(ymd)];
+}
+
+export function getWeekdayKeyFor(instant: Date | string, tz: string): WeekdayKey {
+  return getWeekdayKeyFromYmd(zonedYmd(instant, tz));
+}
+
+// 00:00 (in `tz`) of the calendar day an instant falls on.
+function anchorYmd(iso: string | null | undefined, tz: string): string | null {
+  if (!iso) return null;
+  const ymd = zonedYmd(iso, tz);
+  return ymd || null;
+}
+
+// 00:00 of the day the couple paired. Used to drop pre-pair workouts;
 // unaffected by later week_anchor changes.
+export function getPairedAnchorYmd(
+  partnership: Partnership | null | undefined,
+  tz: string,
+): string | null {
+  return anchorYmd(partnership?.paired_at, tz);
+}
+
 export function getPairedAnchor(
   partnership: Partnership | null | undefined,
+  tz: string,
 ): Date | null {
-  if (!partnership?.paired_at) return null;
-  return toLocalMidnight(partnership.paired_at);
+  const ymd = getPairedAnchorYmd(partnership, tz);
+  return ymd ? zonedMidnightUtc(ymd, tz) : null;
 }
 
-// 00:00 local of the active week anchor. `week_anchor_at` wins; otherwise we
-// fall back to `paired_at`. Represents the start of every 7-day cycle outside
-// of an active extension window.
+// 00:00 of the active week anchor. `week_anchor_at` wins; otherwise we fall
+// back to `paired_at`. Represents the start of every 7-day cycle outside of an
+// active extension window.
+export function getEffectiveAnchorYmd(
+  partnership: Partnership | null | undefined,
+  tz: string,
+): string | null {
+  if (!partnership) return null;
+  if (partnership.week_anchor_at) return anchorYmd(partnership.week_anchor_at, tz);
+  return getPairedAnchorYmd(partnership, tz);
+}
+
 export function getEffectiveAnchor(
   partnership: Partnership | null | undefined,
+  tz: string,
 ): Date | null {
-  if (!partnership) return null;
-  if (partnership.week_anchor_at) return toLocalMidnight(partnership.week_anchor_at);
-  return getPairedAnchor(partnership);
+  const ymd = getEffectiveAnchorYmd(partnership, tz);
+  return ymd ? zonedMidnightUtc(ymd, tz) : null;
 }
 
-// 00:00 local of the pending week-anchor change, if one is scheduled.
+// 00:00 of the pending week-anchor change, if one is scheduled.
+export function getPendingAnchorYmd(
+  partnership: Partnership | null | undefined,
+  tz: string,
+): string | null {
+  return anchorYmd(partnership?.week_anchor_pending_at, tz);
+}
+
 export function getPendingAnchor(
   partnership: Partnership | null | undefined,
+  tz: string,
 ): Date | null {
-  if (!partnership?.week_anchor_pending_at) return null;
-  return toLocalMidnight(partnership.week_anchor_pending_at);
+  const ymd = getPendingAnchorYmd(partnership, tz);
+  return ymd ? zonedMidnightUtc(ymd, tz) : null;
 }
 
 // JS-Day (Sun=0..Sat=6) that the couple's weeks start on. When a pending
@@ -63,19 +132,20 @@ export function getPendingAnchor(
 // user's selection even before it takes effect.
 export function getCurrentWeekStartDay(
   partnership: Partnership | null | undefined,
+  tz: string,
 ): number | null {
-  const pending = getPendingAnchor(partnership);
-  if (pending) return pending.getDay();
-  const eff = getEffectiveAnchor(partnership);
-  if (eff) return eff.getDay();
+  const pending = getPendingAnchorYmd(partnership, tz);
+  if (pending) return zonedDayOfWeek(pending);
+  const eff = getEffectiveAnchorYmd(partnership, tz);
+  if (eff) return zonedDayOfWeek(eff);
   return null;
 }
 
 export type AnchorEra = {
-  // 00:00 local of when this era's anchor became active.
-  anchorAt: Date;
-  // 00:00 local of when the next era began. NULL for the open era.
-  endExclusive: Date | null;
+  // 00:00 of when this era's anchor became active.
+  anchorYmd: string;
+  // 00:00 of when the next era began. NULL for the open era.
+  endExclusiveYmd: string | null;
 };
 
 // Chronological list of anchor eras for a partnership. When `history` is empty
@@ -85,32 +155,38 @@ export type AnchorEra = {
 export function getAnchorEras(
   partnership: Partnership | null | undefined,
   history: PartnershipAnchorHistory[] | null | undefined,
+  tz: string,
 ): AnchorEra[] {
-  const pair = getPairedAnchor(partnership);
+  const pair = getPairedAnchorYmd(partnership, tz);
   if (!pair) return [];
   if (!history || history.length === 0) {
-    return [{ anchorAt: pair, endExclusive: null }];
+    return [{ anchorYmd: pair, endExclusiveYmd: null }];
   }
   const eras: AnchorEra[] = [];
   const sorted = [...history].sort(
     (a, b) => new Date(a.anchor_at).getTime() - new Date(b.anchor_at).getTime(),
   );
   for (const row of sorted) {
-    const anchorAt = toLocalMidnight(row.anchor_at);
-    if (!anchorAt) continue;
-    const endExclusive = row.effective_until
-      ? toLocalMidnight(row.effective_until)
-      : null;
-    eras.push({ anchorAt, endExclusive });
+    const a = anchorYmd(row.anchor_at, tz);
+    if (!a) continue;
+    eras.push({
+      anchorYmd: a,
+      endExclusiveYmd: row.effective_until ? anchorYmd(row.effective_until, tz) : null,
+    });
   }
   return eras;
 }
 
 export type WeekBoundary = {
-  // 00:00 local of the bucket's first day.
+  // Absolute instant of the bucket's first local midnight.
   weekStart: Date;
-  // 00:00 local of the day after the last day in the bucket.
+  // Absolute instant of the local midnight after the last day (exclusive).
   weekEnd: Date;
+  // Calendar-day form of the same two edges — use these for day arithmetic
+  // and formatting rather than reading date parts off the Dates above, which
+  // would reintroduce device-local interpretation.
+  startYmd: string;
+  endYmd: string;
   // Inclusive day count. 7 for normal weeks; 8-13 for an extended transition
   // week that absorbs the leftover days when a closed era doesn't divide
   // evenly by 7 — i.e., the week during which the user's start-day change
@@ -118,6 +194,23 @@ export type WeekBoundary = {
   dayCount: number;
   isTransition: boolean;
 };
+
+function boundary(
+  startYmd: string,
+  endYmd: string,
+  tz: string,
+  isTransition?: boolean,
+): WeekBoundary {
+  const dayCount = diffZonedDays(endYmd, startYmd);
+  return {
+    weekStart: zonedMidnightUtc(startYmd, tz),
+    weekEnd: zonedMidnightUtc(endYmd, tz),
+    startYmd,
+    endYmd,
+    dayCount,
+    isTransition: isTransition ?? dayCount > 7,
+  };
+}
 
 // Full list of partnership week buckets from paired_at through the current
 // open week, ordered ascending. Within each closed era we stride 7 days from
@@ -129,94 +222,65 @@ export type WeekBoundary = {
 export function getPartnershipWeekBoundaries(
   partnership: Partnership | null | undefined,
   history: PartnershipAnchorHistory[] | null | undefined,
+  tz: string,
   now: Date = new Date(),
 ): WeekBoundary[] {
-  const eras = getAnchorEras(partnership, history);
+  const eras = getAnchorEras(partnership, history, tz);
   if (eras.length === 0) return [];
-  const currentWindow = getWeekWindow(partnership, now);
+  const currentWindow = getWeekWindow(partnership, tz, now);
 
   const out: WeekBoundary[] = [];
 
-  for (let i = 0; i < eras.length; i++) {
-    const era = eras[i];
-    const isOpen = era.endExclusive === null;
+  for (const era of eras) {
+    const isOpen = era.endExclusiveYmd === null;
 
     if (isOpen) {
       if (!currentWindow) continue;
-      const currentStartMs = currentWindow.weekStart.getTime();
-      let cursor = new Date(era.anchorAt);
-      while (cursor.getTime() < currentStartMs) {
-        const next = new Date(cursor);
-        next.setDate(next.getDate() + 7);
-        if (next.getTime() > currentStartMs) break;
-        out.push({
-          weekStart: cursor,
-          weekEnd: next,
-          dayCount: 7,
-          isTransition: false,
-        });
+      const currentStart = currentWindow.startYmd;
+      let cursor = era.anchorYmd;
+      while (diffZonedDays(currentStart, cursor) > 0) {
+        const next = addZonedDays(cursor, 7);
+        if (diffZonedDays(next, currentStart) > 0) break;
+        out.push(boundary(cursor, next, tz, false));
         cursor = next;
       }
       out.push({
         weekStart: currentWindow.weekStart,
         weekEnd: currentWindow.weekEnd,
+        startYmd: currentWindow.startYmd,
+        endYmd: currentWindow.endYmd,
         dayCount: currentWindow.dayCount,
         isTransition: currentWindow.isExtendedWeek,
       });
       continue;
     }
 
-    const endMs = era.endExclusive!.getTime();
-    let cursor = new Date(era.anchorAt);
+    const endYmd = era.endExclusiveYmd!;
+    let cursor = era.anchorYmd;
     let lastIdx = -1;
-    while (true) {
-      const next = new Date(cursor);
-      next.setDate(next.getDate() + 7);
+    for (;;) {
+      const next = addZonedDays(cursor, 7);
+      const delta = diffZonedDays(next, endYmd);
 
-      if (next.getTime() === endMs) {
-        out.push({
-          weekStart: cursor,
-          weekEnd: next,
-          dayCount: 7,
-          isTransition: false,
-        });
+      if (delta === 0) {
+        out.push(boundary(cursor, next, tz, false));
         break;
       }
 
-      if (next.getTime() > endMs) {
+      if (delta > 0) {
         // Adding another full week would overshoot. Either extend the most
         // recent bucket to swallow the leftover days, or — if no full week
         // landed in this era — emit a single short bucket spanning the era.
         if (lastIdx >= 0) {
           const prev = out[lastIdx];
-          const newEnd = era.endExclusive!;
-          const dayCount = Math.round(
-            (newEnd.getTime() - prev.weekStart.getTime()) / MS_PER_DAY,
-          );
-          out[lastIdx] = {
-            weekStart: prev.weekStart,
-            weekEnd: newEnd,
-            dayCount,
-            isTransition: dayCount > 7,
-          };
+          out[lastIdx] = boundary(prev.startYmd, endYmd, tz);
         } else {
-          const dayCount = Math.round((endMs - era.anchorAt.getTime()) / MS_PER_DAY);
-          out.push({
-            weekStart: era.anchorAt,
-            weekEnd: era.endExclusive!,
-            dayCount,
-            isTransition: true,
-          });
+          out.push(boundary(era.anchorYmd, endYmd, tz, true));
         }
         break;
       }
 
-      out.push({
-        weekStart: cursor,
-        weekEnd: next,
-        dayCount: 7,
-        isTransition: false,
-      });
+      out.push(boundary(cursor, next, tz, false));
       lastIdx = out.length - 1;
       cursor = next;
     }
@@ -225,36 +289,30 @@ export function getPartnershipWeekBoundaries(
   return out;
 }
 
-// 00:00 local of the next occurrence of `targetDay` (0..6) strictly after
-// `after`. If `after` already lands on `targetDay`, advances a full week.
-export function nextOccurrenceOfDay(targetDay: number, after: Date): Date {
-  const a = new Date(after);
-  a.setHours(0, 0, 0, 0);
-  const diff = ((targetDay - a.getDay() + 7) % 7) || 7;
-  const out = new Date(a);
-  out.setDate(out.getDate() + diff);
-  return out;
+// The next occurrence of `targetDay` (0..6) strictly after `fromYmd`. If
+// `fromYmd` already lands on `targetDay`, advances a full week.
+export function nextOccurrenceOfDayYmd(targetDay: number, fromYmd: string): string {
+  const diff = ((targetDay - zonedDayOfWeek(fromYmd) + 7) % 7) || 7;
+  return addZonedDays(fromYmd, diff);
 }
 
-// 00:00 local of the next occurrence of `targetDay` (0..6) on or after `from`.
-// Returns `from` itself when from.getDay() === targetDay — used to anchor a
+// The next occurrence of `targetDay` (0..6) on or after `fromYmd`. Returns
+// `fromYmd` itself when it already lands on `targetDay` — used to anchor a
 // future pending change to the end of the current cycle without skipping it.
-export function nextDayOnOrAfter(targetDay: number, from: Date): Date {
-  const a = new Date(from);
-  a.setHours(0, 0, 0, 0);
-  const diff = (targetDay - a.getDay() + 7) % 7;
-  const out = new Date(a);
-  out.setDate(out.getDate() + diff);
-  return out;
+export function nextDayOnOrAfterYmd(targetDay: number, fromYmd: string): string {
+  const diff = (targetDay - zonedDayOfWeek(fromYmd) + 7) % 7;
+  return addZonedDays(fromYmd, diff);
 }
 
 export type WeekWindow = {
   weekStart: Date;
   weekEnd: Date; // exclusive
-  effectiveAnchor: Date;
+  startYmd: string;
+  endYmd: string;
+  effectiveAnchorYmd: string;
   isExtendedWeek: boolean;
-  pendingAnchorAt: Date | null;
-  dayCount: number; // (weekEnd - weekStart) / 1d
+  pendingAnchorYmd: string | null;
+  dayCount: number;
 };
 
 // The partnership's current week window. Handles three cases:
@@ -265,115 +323,126 @@ export type WeekWindow = {
 //    persisting the promotion via `promoteWeekAnchorIfDue`.
 export function getWeekWindow(
   partnership: Partnership | null | undefined,
+  tz: string,
   now: Date = new Date(),
 ): WeekWindow | null {
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
+  const today = zonedYmd(now, tz);
 
-  const pending = getPendingAnchor(partnership);
-  if (pending && today.getTime() >= pending.getTime()) {
-    const anchor = pending;
-    const days = Math.floor((today.getTime() - anchor.getTime()) / MS_PER_DAY);
-    const weeksSince = days < 0 ? 0 : Math.floor(days / 7);
-    const weekStart = new Date(anchor);
-    weekStart.setDate(anchor.getDate() + weeksSince * 7);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 7);
+  const pending = getPendingAnchorYmd(partnership, tz);
+  if (pending && diffZonedDays(today, pending) >= 0) {
+    const startYmd = strideToCurrent(pending, today);
+    const endYmd = addZonedDays(startYmd, 7);
     return {
-      weekStart,
-      weekEnd,
-      effectiveAnchor: anchor,
+      weekStart: zonedMidnightUtc(startYmd, tz),
+      weekEnd: zonedMidnightUtc(endYmd, tz),
+      startYmd,
+      endYmd,
+      effectiveAnchorYmd: pending,
       isExtendedWeek: false,
-      pendingAnchorAt: null,
+      pendingAnchorYmd: null,
       dayCount: 7,
     };
   }
 
-  const effectiveAnchor = getEffectiveAnchor(partnership);
+  const effectiveAnchor = getEffectiveAnchorYmd(partnership, tz);
   if (!effectiveAnchor) return null;
 
-  const days = Math.floor((today.getTime() - effectiveAnchor.getTime()) / MS_PER_DAY);
-  const weeksSince = days < 0 ? 0 : Math.floor(days / 7);
-  const weekStart = new Date(effectiveAnchor);
-  weekStart.setDate(effectiveAnchor.getDate() + weeksSince * 7);
+  const startYmd = strideToCurrent(effectiveAnchor, today);
 
-  if (pending && today.getTime() < pending.getTime()) {
-    const weekEnd = pending;
-    const dayCount = Math.round(
-      (weekEnd.getTime() - weekStart.getTime()) / MS_PER_DAY,
-    );
+  if (pending && diffZonedDays(today, pending) < 0) {
+    const endYmd = pending;
+    const dayCount = diffZonedDays(endYmd, startYmd);
     return {
-      weekStart,
-      weekEnd,
-      effectiveAnchor,
+      weekStart: zonedMidnightUtc(startYmd, tz),
+      weekEnd: zonedMidnightUtc(endYmd, tz),
+      startYmd,
+      endYmd,
+      effectiveAnchorYmd: effectiveAnchor,
       isExtendedWeek: dayCount > 7,
-      pendingAnchorAt: pending,
+      pendingAnchorYmd: pending,
       dayCount,
     };
   }
 
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
+  const endYmd = addZonedDays(startYmd, 7);
   return {
-    weekStart,
-    weekEnd,
-    effectiveAnchor,
+    weekStart: zonedMidnightUtc(startYmd, tz),
+    weekEnd: zonedMidnightUtc(endYmd, tz),
+    startYmd,
+    endYmd,
+    effectiveAnchorYmd: effectiveAnchor,
     isExtendedWeek: false,
-    pendingAnchorAt: null,
+    pendingAnchorYmd: null,
     dayCount: 7,
   };
 }
+
+// Start of the 7-day cycle containing `todayYmd`, striding from `anchorYmd`.
+// Pure calendar days, so a DST transition inside the span can't drop a week.
+function strideToCurrent(anchorYmd: string, todayYmd: string): string {
+  const days = diffZonedDays(todayYmd, anchorYmd);
+  const weeksSince = days < 0 ? 0 : Math.floor(days / 7);
+  return addZonedDays(anchorYmd, weeksSince * 7);
+}
+
+// Monday. Only reached by users with no partnership and no anchor of their
+// own; previously a bare `3` (Wednesday) scattered across three files.
+export const DEFAULT_WEEK_START_DAY = 1;
 
 // Solo fallback for callers that need a week window without a partnership
 // (e.g., the post-log success screen for an unpaired user). Anchors at 00:00
 // on the most recent `weekStartDay` on or before `now` and spans 7 days.
 export function getSoloWeekWindow(
+  tz: string,
   now: Date = new Date(),
-  weekStartDay: number = 3,
+  weekStartDay: number = DEFAULT_WEEK_START_DAY,
 ): WeekWindow {
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const diff = (today.getDay() - weekStartDay + 7) % 7;
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() - diff);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
+  const today = zonedYmd(now, tz);
+  const diff = (zonedDayOfWeek(today) - weekStartDay + 7) % 7;
+  const startYmd = addZonedDays(today, -diff);
+  const endYmd = addZonedDays(startYmd, 7);
   return {
-    weekStart,
-    weekEnd,
-    effectiveAnchor: weekStart,
+    weekStart: zonedMidnightUtc(startYmd, tz),
+    weekEnd: zonedMidnightUtc(endYmd, tz),
+    startYmd,
+    endYmd,
+    effectiveAnchorYmd: startYmd,
     isExtendedWeek: false,
-    pendingAnchorAt: null,
+    pendingAnchorYmd: null,
     dayCount: 7,
   };
 }
 
 export function getPartnershipWeekStart(
   partnership: Partnership | null | undefined,
+  tz: string,
   now: Date = new Date(),
 ): Date | null {
-  return getWeekWindow(partnership, now)?.weekStart ?? null;
+  return getWeekWindow(partnership, tz, now)?.weekStart ?? null;
 }
 
 export function getPartnershipWeekEnd(
   partnership: Partnership | null | undefined,
+  tz: string,
   now: Date = new Date(),
 ): Date | null {
-  return getWeekWindow(partnership, now)?.weekEnd ?? null;
+  return getWeekWindow(partnership, tz, now)?.weekEnd ?? null;
 }
 
 export function getMillisUntilNextRollover(
   partnership: Partnership | null | undefined,
+  tz: string,
   now: Date = new Date(),
 ): number | null {
-  const end = getPartnershipWeekEnd(partnership, now);
+  const end = getPartnershipWeekEnd(partnership, tz, now);
   if (!end) return null;
   return Math.max(0, end.getTime() - now.getTime());
 }
 
 // If a pending anchor change has come due, return the field updates the
 // caller should write back to the partnership row. Null when no promotion
-// is needed.
+// is needed. Compares absolute instants, so both devices promote at the same
+// moment rather than whenever their local midnight happens to arrive.
 export function promoteWeekAnchorIfDue(
   partnership: Partnership | null | undefined,
   now: Date = new Date(),
@@ -391,10 +460,11 @@ export function promoteWeekAnchorIfDue(
 export function isInCurrentPartnershipWeek(
   loggedAtIso: string,
   partnership: Partnership | null | undefined,
+  tz: string,
   now: Date = new Date(),
 ): boolean {
-  const window = getWeekWindow(partnership, now);
-  const pair = getPairedAnchor(partnership);
+  const window = getWeekWindow(partnership, tz, now);
+  const pair = getPairedAnchor(partnership, tz);
   if (!window || !pair) return false;
   const t = new Date(loggedAtIso).getTime();
   if (Number.isNaN(t)) return false;
@@ -406,8 +476,7 @@ export function isInCurrentPartnershipWeek(
 // individually hit `target` distinct workout days. Missed weeks do not
 // reset the count — they simply don't contribute. Buckets follow the
 // era-aware boundary list (so weeks before an anchor change keep their
-// original 7-day boundaries, and the transition week is a single longer
-// bucket).
+// original boundaries, and the transition week is a single longer bucket).
 export function partnershipWeekStreak(
   workouts: Workout[],
   partnership: Partnership | null | undefined,
@@ -415,27 +484,24 @@ export function partnershipWeekStreak(
   aId: string | null | undefined,
   bId: string | null | undefined,
   target: number,
+  tz: string,
   now: Date = new Date(),
 ): number {
   if (!aId || !bId || target <= 0) return 0;
-  const boundaries = getPartnershipWeekBoundaries(partnership, history, now);
+  const boundaries = getPartnershipWeekBoundaries(partnership, history, tz, now);
   if (boundaries.length === 0) return 0;
 
-  // Pre-bucket workouts by boundary index in one pass. Boundaries are
-  // ascending and contiguous within an era, so a binary search per workout
-  // is O(N log B); for the partnership sizes we care about a linear scan
-  // would also be fine.
   const aDays: Set<string>[] = boundaries.map(() => new Set());
   const bDays: Set<string>[] = boundaries.map(() => new Set());
 
-  const findIdx = (dayMs: number): number => {
+  const findIdx = (ymd: string): number => {
     let lo = 0;
     let hi = boundaries.length - 1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       const b = boundaries[mid];
-      if (dayMs < b.weekStart.getTime()) hi = mid - 1;
-      else if (dayMs >= b.weekEnd.getTime()) lo = mid + 1;
+      if (diffZonedDays(ymd, b.startYmd) < 0) hi = mid - 1;
+      else if (diffZonedDays(ymd, b.endYmd) >= 0) lo = mid + 1;
       else return mid;
     }
     return -1;
@@ -443,18 +509,12 @@ export function partnershipWeekStreak(
 
   for (const w of workouts) {
     if (w.user_id !== aId && w.user_id !== bId) continue;
-    const ts = new Date(w.logged_at);
-    if (Number.isNaN(ts.getTime())) continue;
-    const dayMs = new Date(
-      ts.getFullYear(),
-      ts.getMonth(),
-      ts.getDate(),
-    ).getTime();
-    const idx = findIdx(dayMs);
+    const ymd = workoutYmd(w, tz);
+    if (!ymd) continue;
+    const idx = findIdx(ymd);
     if (idx < 0) continue;
-    const key = `${ts.getFullYear()}-${ts.getMonth()}-${ts.getDate()}`;
-    if (w.user_id === aId) aDays[idx].add(key);
-    else bDays[idx].add(key);
+    if (w.user_id === aId) aDays[idx].add(ymd);
+    else bDays[idx].add(ymd);
   }
 
   let count = 0;
@@ -470,6 +530,7 @@ export function partnershipWeekStreak(
 export function weekProgressFromWorkouts(
   workouts: Workout[],
   user: Profile,
+  tz: string,
   target = 3,
   weekStart: Date | null = null,
   weekEnd: Date | null = null,
@@ -477,13 +538,15 @@ export function weekProgressFromWorkouts(
   const completedSet = new Set<WeekdayKey>();
   if (weekStart) {
     const weekStartMs = weekStart.getTime();
-    const weekEndMs = weekEnd ? weekEnd.getTime() : weekStartMs + 7 * MS_PER_DAY;
+    const weekEndMs = weekEnd
+      ? weekEnd.getTime()
+      : zonedMidnightUtc(addZonedDays(zonedYmd(weekStart, tz), 7), tz).getTime();
     for (const w of workouts) {
       if (w.user_id !== user.id) continue;
       const t = new Date(w.logged_at).getTime();
       if (Number.isNaN(t)) continue;
       if (t < weekStartMs || t >= weekEndMs) continue;
-      completedSet.add(getWeekdayKeyFromDate(new Date(w.logged_at)));
+      completedSet.add(getWeekdayKeyFromYmd(workoutYmd(w, tz)));
     }
   }
 

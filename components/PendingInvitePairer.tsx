@@ -3,9 +3,11 @@ import { useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 
 import { useAuth } from '@/lib/auth';
+import { isNetworkError, toUserMessage } from '@/lib/errors';
 import { pairWithCode } from '@/lib/invite';
 import { clearPendingInviteCode, getPendingInviteCode } from '@/lib/onboarding';
 import { usePartnership } from '@/lib/partnership';
+import { waitForProfileReady } from '@/lib/profileReady';
 import { supabase } from '@/lib/supabase';
 
 // Redeems an invite code that was entered during onboarding (before sign-in).
@@ -26,6 +28,13 @@ export function PendingInvitePairer() {
     (async () => {
       const code = await getPendingInviteCode();
       if (cancelled || !code) return;
+
+      // Let the joiner's onboarding name land on their profile first. Redeeming
+      // the code fires a realtime event on the inviter's device, which snapshots
+      // the partner's display_name for a one-shot celebration — pair too early
+      // and that celebration is stuck with the OAuth-seeded name.
+      await waitForProfileReady(userId);
+      if (cancelled) return;
 
       try {
         const updated = await pairWithCode(code);
@@ -51,10 +60,15 @@ export function PendingInvitePairer() {
           params: partnerName ? { name: partnerName } : undefined,
         });
       } catch (e) {
-        // The stashed code is single-use — drop it so we don't retry-loop.
-        await clearPendingInviteCode();
-        const message = e instanceof Error ? e.message : 'Please try again.';
-        Alert.alert('Could not connect with partner', message);
+        // The stashed code is single-use, so a *server* rejection means it can
+        // never succeed — drop it rather than retry-loop. A network failure is
+        // different: the code was never consumed, and clearing it here used to
+        // permanently lose the invite on a flaky first launch, forcing the user
+        // to re-enter it by hand. Keep it and let the next mount retry.
+        if (!isNetworkError(e)) {
+          await clearPendingInviteCode();
+        }
+        Alert.alert('Could not connect with partner', toUserMessage(e));
       }
     })();
 

@@ -23,9 +23,11 @@ import { WorkoutPage } from '@/components/photo-detail/WorkoutPage';
 import { useAuth } from '@/lib/auth';
 import { useWorkoutComments } from '@/lib/comments';
 import { useCommentViews } from '@/lib/commentViews';
+import { toUserMessage } from '@/lib/errors';
 import { usePartnership } from '@/lib/partnership';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, spacing, typography } from '@/lib/theme';
+import { useWorkoutSync } from '@/lib/workoutSync';
 import { deleteWorkout, useWorkouts } from '@/lib/workouts';
 import type { Profile, Workout } from '@/types/db';
 
@@ -48,7 +50,8 @@ export default function PhotoDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { workouts, removeWorkout } = useWorkouts();
+  const { workouts } = useWorkouts();
+  const { removeWorkoutLocal } = useWorkoutSync();
   const { user, profile } = useAuth();
   const { partner } = usePartnership();
   const { byWorkout, add: addComment } = useWorkoutComments();
@@ -194,11 +197,11 @@ export default function PhotoDetailScreen() {
           onPress: async () => {
             try {
               await deleteWorkout(active);
-              removeWorkout(active.id);
+              removeWorkoutLocal(active.id);
             } catch (err) {
               Alert.alert(
                 'Could not delete',
-                err instanceof Error ? err.message : 'Please try again.',
+                toUserMessage(err),
               );
             }
           },

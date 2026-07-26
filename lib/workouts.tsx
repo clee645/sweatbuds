@@ -10,12 +10,12 @@ import {
 } from 'react';
 
 import { useAuth } from './auth';
+import { toUserMessage } from './errors';
 import { usePartnership } from './partnership';
-import { uploadWorkoutImage } from './storage';
+import { deleteWorkoutImages, uploadWorkoutImage } from './storage';
 import { supabase } from './supabase';
+import { deviceTimezone } from './zonedTime';
 import type { Workout } from '@/types/db';
-
-const BUCKET = 'workout-images';
 
 type CreateWorkoutInput = {
   userId: string;
@@ -23,16 +23,39 @@ type CreateWorkoutInput = {
   selfieUri: string;
   environmentUri: string;
   caption: string | null;
+  // Stable across retries of the same capture session. When the caller supplies
+  // it, a retry re-puts the same two storage paths (uploadWorkoutImage upserts)
+  // instead of minting a fresh id and orphaning the previous attempt's objects.
+  workoutId?: string;
 };
 
+// Uploads two images then inserts the row. That's inherently non-atomic, so
+// every failure path below compensates by removing whatever already landed —
+// otherwise a failed log leaves unreferenced objects in the bucket that only
+// account deletion would ever reclaim.
 export async function createWorkout(input: CreateWorkoutInput): Promise<Workout> {
-  const workoutId = randomUUID();
+  const workoutId = input.workoutId ?? randomUUID();
 
-  const [selfiePath, environmentPath] = await Promise.all([
+  // allSettled, not all: with Promise.all a rejection from one upload discards
+  // the other's resolved path, leaving it orphaned and unrecoverable.
+  const results = await Promise.allSettled([
     uploadWorkoutImage(input.selfieUri, input.userId, workoutId, 'selfie'),
     uploadWorkoutImage(input.environmentUri, input.userId, workoutId, 'environment'),
   ]);
 
+  const uploaded = results
+    .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
+    .map((r) => r.value);
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+
+  if (failed) {
+    await deleteWorkoutImages(uploaded);
+    throw failed.reason instanceof Error
+      ? failed.reason
+      : new Error('Failed to upload workout photos');
+  }
+
+  const [selfiePath, environmentPath] = uploaded;
   const trimmed = input.caption?.trim();
   const caption = trimmed && trimmed.length > 0 ? trimmed.slice(0, 140) : null;
 
@@ -45,11 +68,20 @@ export async function createWorkout(input: CreateWorkoutInput): Promise<Workout>
       selfie_path: selfiePath,
       environment_path: environmentPath,
       caption,
+      // The device's zone RIGHT NOW, not the stored profile value — a workout
+      // logged while travelling belongs to the day where it happened. A trigger
+      // turns this into logged_date server-side, so the client never gets to
+      // choose the date itself.
+      logged_tz: deviceTimezone(),
     })
-    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at')
+    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
     .single();
 
-  if (error || !data) throw error ?? new Error('Failed to insert workout');
+  if (error || !data) {
+    // Both objects are already in the bucket at this point.
+    await deleteWorkoutImages([selfiePath, environmentPath]);
+    throw error ?? new Error('Failed to insert workout');
+  }
   return data as Workout;
 }
 
@@ -60,9 +92,7 @@ export async function deleteWorkout(workout: Workout): Promise<void> {
   const paths = [workout.selfie_path, workout.environment_path].filter(
     (p): p is string => Boolean(p),
   );
-  if (paths.length > 0) {
-    await supabase.storage.from(BUCKET).remove(paths);
-  }
+  await deleteWorkoutImages(paths);
 }
 
 type WorkoutsContextValue = {
@@ -119,7 +149,7 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
     // partnership workouts to a new partner.
     let rowsQuery = supabase
       .from('workouts')
-      .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at')
+      .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
       .order('logged_at', { ascending: false })
       .limit(50);
     let countQuery = supabase
@@ -136,7 +166,9 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
     const [rowsResult, countResult] = await Promise.all([rowsQuery, countQuery]);
 
     if (rowsResult.error) {
-      setError(rowsResult.error.message);
+      // Stored for display, so it has to be user-facing copy rather than the
+      // raw transport string.
+      setError(toUserMessage(rowsResult.error, 'Could not load workouts.'));
       setHasLoaded(true);
       return;
     }
@@ -151,15 +183,30 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
-  const prependWorkout = useCallback((w: Workout) => {
-    let added = false;
-    setWorkouts((prev) => {
-      if (prev.some((existing) => existing.id === w.id)) return prev;
-      added = true;
-      return [w, ...prev];
-    });
-    if (added) setTotalCount((prev) => (prev === null ? prev : prev + 1));
-  }, []);
+  // The scope guard mirrors the partnership/user filter in refresh() above, so
+  // a row this provider's own query wouldn't have returned never lands in the
+  // array (or in totalCount). Deps are the two string keys rather than the
+  // partnership object so the identity stays stable across re-renders — the
+  // realtime subscription keys its effect off this callback.
+  const prependWorkout = useCallback(
+    (w: Workout) => {
+      if (!userId) return;
+      const inScope = partnershipKey
+        ? w.partnership_id === partnershipKey
+        : w.user_id === userId;
+      if (!inScope) return;
+      let added = false;
+      setWorkouts((prev) => {
+        if (prev.some((existing) => existing.id === w.id)) return prev;
+        added = true;
+        // Sort rather than blind-prepend: a realtime row from the partner can
+        // arrive out of `logged_at` order relative to what's already loaded.
+        return [w, ...prev].sort((a, b) => b.logged_at.localeCompare(a.logged_at));
+      });
+      if (added) setTotalCount((prev) => (prev === null ? prev : prev + 1));
+    },
+    [userId, partnershipKey],
+  );
 
   const removeWorkout = useCallback((id: string) => {
     let removed = false;

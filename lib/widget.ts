@@ -5,7 +5,12 @@ import { Platform } from 'react-native';
 import * as widget from 'sweatbuds-widget';
 import { getSignedUrls } from './storage';
 import { supabase } from './supabase';
-import { weekProgressFromWorkouts } from './week';
+import {
+  getSoloWeekWindow,
+  getWeekWindow,
+  resolveWeekTimezone,
+  weekProgressFromWorkouts,
+} from './week';
 import type { Partnership, Profile, Workout } from '@/types/db';
 
 const PARTNER_SYNC_KEY = 'widget:lastPartnerWorkoutId';
@@ -13,6 +18,13 @@ const PARTNER_SYNC_AT_KEY = 'widget:lastPartnerSyncAt';
 const FOREGROUND_DEBOUNCE_MS = 60_000;
 
 export const isWidgetAvailable = Platform.OS === 'ios' && widget.isAvailable;
+
+// Widget sync is chatty and runs on a background task, so its logs would
+// otherwise land in the iOS unified log on release builds. Keep them to dev,
+// and never pass user identifiers, display names, or signed URLs through here.
+function wlog(...args: unknown[]): void {
+  if (__DEV__) console.log('[widget]', ...args);
+}
 
 async function downloadToTemp(url: string, name: string): Promise<string> {
   const dest = `${FileSystem.cacheDirectory}widget-${name}-${Date.now()}.jpg`;
@@ -29,7 +41,7 @@ async function syncWorkoutToWidget(args: {
   if (!isWidgetAvailable) return;
   const { workout, partnerName, streak, source } = args;
   if (!workout.environment_path) {
-    console.log('[widget] syncWorkoutToWidget skipped: no environment_path on workout', workout.id);
+    wlog('syncWorkoutToWidget skipped: no environment_path on workout');
     return;
   }
 
@@ -37,7 +49,11 @@ async function syncWorkoutToWidget(args: {
   const selfieUrl = urls[workout.selfie_path];
   const envUrl = urls[workout.environment_path];
   if (!selfieUrl || !envUrl) {
-    console.log('[widget] syncWorkoutToWidget skipped: missing signed URL', { selfieUrl, envUrl });
+    // Log presence only — a signed URL is a bearer credential for a private photo.
+    wlog('syncWorkoutToWidget skipped: missing signed URL', {
+      hasSelfie: !!selfieUrl,
+      hasEnv: !!envUrl,
+    });
     return;
   }
 
@@ -46,7 +62,7 @@ async function syncWorkoutToWidget(args: {
     downloadToTemp(envUrl, `${source}-environment`),
   ]);
 
-  console.log('[widget] writing setLatestPost', { source, workoutId: workout.id });
+  wlog('writing setLatestPost', { source });
   await widget.setLatestPost({
     selfieUri,
     environmentUri,
@@ -65,27 +81,24 @@ export async function syncPartnerLatestToWidget(args: {
   force?: boolean;
 }): Promise<void> {
   if (!isWidgetAvailable) {
-    console.log('[widget] syncPartnerLatestToWidget skipped: native module unavailable');
+    wlog('syncPartnerLatestToWidget skipped: native module unavailable');
     return;
   }
 
   if (!args.partner) {
-    console.log('[widget] syncPartnerLatestToWidget: no partner → writing noPartner');
+    wlog('syncPartnerLatestToWidget: no partner → writing noPartner');
     await widget.setEmptyState('noPartner', null);
     await AsyncStorage.removeItem(PARTNER_SYNC_KEY);
     return;
   }
 
-  console.log(
-    '[widget] syncPartnerLatestToWidget start',
-    { partner: args.partner.display_name, partnerId: args.partner.id, force: !!args.force },
-  );
+  wlog('syncPartnerLatestToWidget start', { force: !!args.force });
 
   if (!args.force) {
     const lastSyncAtStr = await AsyncStorage.getItem(PARTNER_SYNC_AT_KEY);
     const lastSyncAt = lastSyncAtStr ? Number(lastSyncAtStr) : 0;
     if (Number.isFinite(lastSyncAt) && Date.now() - lastSyncAt < FOREGROUND_DEBOUNCE_MS) {
-      console.log('[widget] syncPartnerLatestToWidget debounced');
+      wlog('syncPartnerLatestToWidget debounced');
       return;
     }
   }
@@ -96,7 +109,6 @@ export async function syncPartnerLatestToWidget(args: {
   // widget stuck on the eager noLogs entry. We now write only one terminal
   // state per sync (ready, noLogs from empty data, or noLogs from fetch error).
 
-  const partnershipId = args.partnership?.id ?? null;
   // Filter strictly by partner's user_id. A partnership_id OR fallback would
   // match every workout in the partnership (including the current user's own),
   // so the most recent log on either device would surface as "the partner's
@@ -104,46 +116,55 @@ export async function syncPartnerLatestToWidget(args: {
   // your partner.
   const { data, error } = await supabase
     .from('workouts')
-    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at')
+    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
     .eq('user_id', args.partner.id)
     .order('logged_at', { ascending: false })
     .limit(20);
 
   if (error) {
-    console.log('[widget] partner workouts fetch failed:', error.message);
+    wlog('partner workouts fetch failed:', error.message);
     try {
       await widget.setEmptyState('noLogs', args.partner.display_name);
     } catch (fallbackErr) {
-      console.log('[widget] noLogs fallback after fetch error failed:', fallbackErr);
+      wlog('noLogs fallback after fetch error failed:', fallbackErr);
     }
     return;
   }
 
-  console.log('[widget] partner workouts fetched:', data?.length ?? 0);
+  wlog('partner workouts fetched:', data?.length ?? 0);
   await AsyncStorage.setItem(PARTNER_SYNC_AT_KEY, String(Date.now()));
 
   const partnerWorkouts = (data ?? []) as Workout[];
   const latest = partnerWorkouts[0];
   if (!latest) {
-    console.log('[widget] partner has no workouts → writing noLogs');
+    wlog('partner has no workouts → writing noLogs');
     await widget.setEmptyState('noLogs', args.partner.display_name);
     await AsyncStorage.removeItem(PARTNER_SYNC_KEY);
-    await logZeroResultDiagnostic(args.partner.id, partnershipId);
     return;
   }
 
   const lastId = await AsyncStorage.getItem(PARTNER_SYNC_KEY);
   if (!args.force && lastId === latest.id) {
-    console.log('[widget] partner workout unchanged, skipping');
+    wlog('partner workout unchanged, skipping');
     return;
   }
 
-  // Match the in-app "this week" counter (distinct logged days this week,
-  // Wed-anchored) so the widget chip reads the same as the home screen.
+  // Match the in-app "this week" counter (distinct logged days in the couple's
+  // current week) so the widget chip reads the same as the home screen.
+  //
+  // This previously passed no week window at all — and weekProgressFromWorkouts
+  // guards its entire loop on `weekStart`, so the chip was hard-zero on every
+  // sync. Resolve the real window against the partnership's zone.
+  const tz = resolveWeekTimezone(args.partnership);
+  const weekWindow =
+    getWeekWindow(args.partnership, tz) ?? getSoloWeekWindow(tz);
   const streak = weekProgressFromWorkouts(
     partnerWorkouts,
     args.partner,
+    tz,
     args.weeklyTarget,
+    weekWindow.weekStart,
+    weekWindow.weekEnd,
   ).workoutsThisWeek;
 
   try {
@@ -154,13 +175,13 @@ export async function syncPartnerLatestToWidget(args: {
       source: 'partner',
     });
     await AsyncStorage.setItem(PARTNER_SYNC_KEY, latest.id);
-    console.log('[widget] syncPartnerLatestToWidget complete: ready');
+    wlog('syncPartnerLatestToWidget complete: ready');
   } catch (err) {
-    console.log('[widget] syncWorkoutToWidget threw, falling back to noLogs:', err);
+    wlog('syncWorkoutToWidget threw, falling back to noLogs:', err);
     try {
       await widget.setEmptyState('noLogs', args.partner.display_name);
     } catch (fallbackErr) {
-      console.log('[widget] noLogs fallback also failed:', fallbackErr);
+      wlog('noLogs fallback also failed:', fallbackErr);
     }
   }
 }
@@ -177,59 +198,7 @@ export async function debugForcePartnerSync(args: {
   await AsyncStorage.removeItem(PARTNER_SYNC_KEY);
   await AsyncStorage.removeItem(PARTNER_SYNC_AT_KEY);
   await syncPartnerLatestToWidget({ ...args, force: true });
-  return 'Done — check Metro logs for [widget] entries.';
-}
-
-// One-shot diagnostic: when the partner-workouts fetch returns zero rows with
-// no error, RLS has silently filtered everything. Surface what the current
-// session actually sees so we can tell apart (a) wrong auth.uid, (b) stale
-// partnership row, (c) genuinely empty data.
-async function logZeroResultDiagnostic(
-  partnerId: string,
-  partnershipId: string | null,
-): Promise<void> {
-  try {
-    const { data: userData } = await supabase.auth.getUser();
-    const authUid = userData.user?.id ?? null;
-    console.log('[widget][diag] auth.uid()', authUid);
-
-    if (authUid) {
-      const { data: partnerships, error: pErr } = await supabase
-        .from('partnerships')
-        .select('id, user_a, user_b, status, created_at')
-        .or(`user_a.eq.${authUid},user_b.eq.${authUid}`)
-        .order('created_at', { ascending: false });
-      if (pErr) {
-        console.log('[widget][diag] partnerships fetch error:', pErr.message);
-      } else {
-        console.log('[widget][diag] visible partnerships:', JSON.stringify(partnerships ?? []));
-      }
-    }
-
-    if (partnershipId) {
-      const { count, error: cErr } = await supabase
-        .from('workouts')
-        .select('id', { count: 'exact', head: true })
-        .eq('partnership_id', partnershipId);
-      if (cErr) {
-        console.log('[widget][diag] count by partnership_id error:', cErr.message);
-      } else {
-        console.log('[widget][diag] count by partnership_id:', count ?? 0);
-      }
-    }
-
-    const { count: byUserCount, error: uErr } = await supabase
-      .from('workouts')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', partnerId);
-    if (uErr) {
-      console.log('[widget][diag] count by partner user_id error:', uErr.message);
-    } else {
-      console.log('[widget][diag] count by partner user_id:', byUserCount ?? 0);
-    }
-  } catch (err) {
-    console.log('[widget][diag] threw', err);
-  }
+  return 'Done — widget refreshed.';
 }
 
 export async function clearWidget(): Promise<void> {
@@ -238,6 +207,6 @@ export async function clearWidget(): Promise<void> {
     await widget.clear();
     await AsyncStorage.multiRemove([PARTNER_SYNC_KEY, PARTNER_SYNC_AT_KEY]);
   } catch (err) {
-    if (__DEV__) console.warn('[widget] clear failed', err);
+    wlog('clear failed', err);
   }
 }

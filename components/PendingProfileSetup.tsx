@@ -8,6 +8,7 @@ import {
   getPendingDisplayName,
   getPendingPhotoUri,
 } from '@/lib/onboarding';
+import { markProfileReady } from '@/lib/profileReady';
 import { supabase } from '@/lib/supabase';
 
 // Applies the display name + profile photo collected during onboarding (stashed
@@ -33,47 +34,70 @@ export function PendingProfileSetup() {
 
     let cancelled = false;
     (async () => {
-      const [name, photoUri] = await Promise.all([
-        getPendingDisplayName(),
-        getPendingPhotoUri(),
-      ]);
-      if (cancelled) return;
-      if (!name && !photoUri) return;
+      // Phase 1 — the name, on its own write. PendingInvitePairer blocks on the
+      // barrier below, so everything in here is on the critical path and must
+      // stay fast: a single update, no uploads.
+      let photoUri: string | null = null;
+      try {
+        const [name, pendingPhoto] = await Promise.all([
+          getPendingDisplayName(),
+          getPendingPhotoUri(),
+        ]);
+        if (cancelled) return;
+        photoUri = pendingPhoto;
+        if (!name && !photoUri) return;
 
-      // Only a freshly-created account should have its OAuth-seeded name/avatar
-      // overridden. For anyone else, drop the pending values so they can't be
-      // applied on a later sign-in.
-      const createdAt = user?.created_at ? new Date(user.created_at).getTime() : 0;
-      const isBrandNew =
-        createdAt > 0 && Date.now() - createdAt < NEW_ACCOUNT_WINDOW_MS;
-      if (!isBrandNew) {
-        await clearPendingDisplayName();
-        await clearPendingPhotoUri();
-        return;
-      }
-
-      const updates: { display_name?: string; avatar_url?: string } = {};
-      if (name) updates.display_name = name;
-      if (photoUri) {
-        try {
-          updates.avatar_url = await uploadAvatar(photoUri, userId);
-        } catch {
-          // Upload failed (e.g. transient network / stale cache URI). Leave the
-          // photo pending so the next launch can retry; still apply the name.
+        // Only a freshly-created account should have its OAuth-seeded name/avatar
+        // overridden. For anyone else, drop the pending values so they can't be
+        // applied on a later sign-in.
+        const createdAt = user?.created_at ? new Date(user.created_at).getTime() : 0;
+        const isBrandNew =
+          createdAt > 0 && Date.now() - createdAt < NEW_ACCOUNT_WINDOW_MS;
+        if (!isBrandNew) {
+          photoUri = null;
+          await clearPendingDisplayName();
+          await clearPendingPhotoUri();
+          return;
         }
-      }
-      if (cancelled || Object.keys(updates).length === 0) return;
 
-      const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
-      if (cancelled || error) {
-        // Leave the pending values in place so a later mount retries.
+        if (name) {
+          const { error } = await supabase
+            .from('profiles')
+            .update({ display_name: name })
+            .eq('id', userId);
+          // On error the pending name stays put so a later mount retries.
+          if (!error) {
+            await clearPendingDisplayName();
+            if (!cancelled) await refreshProfile().catch(() => undefined);
+          }
+        }
+      } finally {
+        // However phase 1 ended — nothing to apply, wrong account, failed
+        // write, unmount — pairing must not keep waiting on us.
+        markProfileReady(userId);
+      }
+
+      // Phase 2 — the photo. Resize + upload + a second write, deliberately
+      // after the barrier so a slow connection can't hold up pairing.
+      if (cancelled || !photoUri) return;
+
+      let avatarUrl: string;
+      try {
+        avatarUrl = await uploadAvatar(photoUri, userId);
+      } catch {
+        // Upload failed (e.g. transient network / stale cache URI). Leave the
+        // photo pending so the next launch can retry.
         return;
       }
+      if (cancelled) return;
 
-      // Clear only what we actually persisted — if the photo upload failed
-      // above, its key stays for retry while the applied name is cleared.
-      if (updates.display_name !== undefined) await clearPendingDisplayName();
-      if (updates.avatar_url !== undefined) await clearPendingPhotoUri();
+      const { error } = await supabase
+        .from('profiles')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', userId);
+      if (cancelled || error) return;
+
+      await clearPendingPhotoUri();
       await refreshProfile().catch(() => undefined);
     })();
 

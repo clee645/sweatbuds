@@ -51,8 +51,16 @@ export async function resetRevenueCatUser(): Promise<void> {
 
 export async function getCurrentOffering(): Promise<PurchasesOffering | null> {
   if (!configured) return null;
-  const offerings = await Purchases.getOfferings();
-  return offerings.current ?? null;
+  try {
+    const offerings = await Purchases.getOfferings();
+    return offerings.current ?? null;
+  } catch (err) {
+    // Offline or RC hiccup. Returning null keeps the subscription provider
+    // resolvable — an unhandled rejection here used to leave `loading` true
+    // forever and strand the app on the splash screen.
+    if (__DEV__) console.warn('[RevenueCat] getOfferings failed', err);
+    return null;
+  }
 }
 
 export async function getCustomerInfo(): Promise<CustomerInfo | null> {

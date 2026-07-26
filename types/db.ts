@@ -4,6 +4,9 @@ export type Profile = {
   avatar_url: string | null;
   created_at: string;
   timezone: string | null;
+  // True once the user picks a timezone in Settings. Suppresses device
+  // auto-detection permanently, on every device they sign in from.
+  timezone_set_by_user: boolean;
   is_pro: boolean;
 };
 
@@ -23,6 +26,10 @@ export type Partnership = {
   paired_at: string | null;
   week_anchor_at: string | null;
   week_anchor_pending_at: string | null;
+  // IANA zone that ALL week/day math for this couple resolves against, so both
+  // partners' devices agree regardless of where they are. NULL falls back to
+  // profiles.timezone, then the device zone (see resolveWeekTimezone).
+  timezone: string | null;
   // Forward-only epoch for the wager ledger: only weeks ENDING after this
   // instant are settled into the `wagers` table. Stamped at migration/insert
   // time (NOT NULL DEFAULT now()), so existing history is never backfilled.
@@ -45,6 +52,14 @@ export type Workout = {
   environment_path: string | null;
   caption: string | null;
   logged_at: string;
+  // The logger's OWN calendar date, stamped server-side at insert. This is the
+  // authoritative answer to "which day did this count for" — never re-derive it
+  // from logged_at, which is what let a Tokyo partner's Tuesday read as Monday.
+  // Null only on rows that predate the stamping migration (0027).
+  logged_date: string | null;
+  // The logger's device zone at that moment. Input to the stamping trigger;
+  // kept for debugging and future display, not read by week math.
+  logged_tz: string | null;
 };
 
 export type WorkoutComment = {

@@ -5,47 +5,34 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SettingsSection } from '@/components/settings/SettingsSection';
+import { toUserMessage } from '@/lib/errors';
 import { usePartnership } from '@/lib/partnership';
 import { colors, spacing, typography } from '@/lib/theme';
+import { formatDayLabel } from '@/lib/historyWeek';
 import {
   getCurrentWeekStartDay,
-  getPendingAnchor,
+  getPendingAnchorYmd,
   getWeekWindow,
-  nextDayOnOrAfter,
+  nextDayOnOrAfterYmd,
 } from '@/lib/week';
+import { addZonedDays, zonedDayOfWeek } from '@/lib/zonedTime';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MONTHS_SHORT = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-function fmtDate(d: Date): string {
-  return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
-}
 
 export default function WeekStartDayScreen() {
-  const { partnership, setWeekStartDay } = usePartnership();
+  const { partnership, setWeekStartDay, weekTimezone } = usePartnership();
   const [saving, setSaving] = useState<number | null>(null);
 
-  const currentDay = getCurrentWeekStartDay(partnership);
-  const pendingAnchor = getPendingAnchor(partnership);
-  const weekWindow = getWeekWindow(partnership);
+  const currentDay = getCurrentWeekStartDay(partnership, weekTimezone);
+  const pendingAnchorYmd = getPendingAnchorYmd(partnership, weekTimezone);
+  const weekWindow = getWeekWindow(partnership, weekTimezone);
 
   const pendingFooter = useMemo(() => {
-    if (!pendingAnchor) return null;
-    return `Takes effect ${DAY_NAMES[pendingAnchor.getDay()]}, ${fmtDate(pendingAnchor)}`;
-  }, [pendingAnchor]);
+    if (!pendingAnchorYmd) return null;
+    return `Takes effect ${DAY_NAMES[zonedDayOfWeek(pendingAnchorYmd)]}, ${formatDayLabel(
+      pendingAnchorYmd,
+    )}`;
+  }, [pendingAnchorYmd]);
 
   const handlePick = (day: number) => {
     if (saving !== null) return;
@@ -59,15 +46,13 @@ export default function WeekStartDayScreen() {
       Alert.alert('Could not update', 'No active week.');
       return;
     }
-    const cycleEnd = new Date(weekWindow.weekStart);
-    cycleEnd.setDate(cycleEnd.getDate() + 7);
-    const next = nextDayOnOrAfter(day, cycleEnd);
-    const newEnd = new Date(next);
-    newEnd.setDate(newEnd.getDate() - 1);
+    const cycleEndYmd = addZonedDays(weekWindow.startYmd, 7);
+    const nextYmd = nextDayOnOrAfterYmd(day, cycleEndYmd);
+    const newEndYmd = addZonedDays(nextYmd, -1);
 
     const lines = [
-      `Your current week will run through ${fmtDate(newEnd)}.`,
-      `New weeks will start on ${DAY_NAMES[day]}, beginning ${fmtDate(next)}.`,
+      `Your current week will run through ${formatDayLabel(newEndYmd)}.`,
+      `New weeks will start on ${DAY_NAMES[day]}, beginning ${formatDayLabel(nextYmd)}.`,
     ];
 
     Alert.alert('Change week start day?', lines.join('\n\n'), [
@@ -80,7 +65,7 @@ export default function WeekStartDayScreen() {
             try {
               await setWeekStartDay(day);
             } catch (e) {
-              const msg = e instanceof Error ? e.message : 'Try again.';
+              const msg = toUserMessage(e, 'Try again.');
               Alert.alert('Could not update', msg);
             } finally {
               setSaving(null);

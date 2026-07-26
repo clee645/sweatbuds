@@ -11,15 +11,20 @@ import '@/lib/location/geofence-task';
 import '@/lib/notifications-background';
 
 import { BrandedSplash } from '@/components/BrandedSplash';
+import { GeofenceSync } from '@/components/location/GeofenceSync';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { PartnerJoinedToast } from '@/components/pairing/PartnerJoinedToast';
 import { PartnerLeftToast } from '@/components/pairing/PartnerLeftToast';
 import { PendingInvitePairer } from '@/components/PendingInvitePairer';
 import { PendingInviteRegistrar } from '@/components/PendingInviteRegistrar';
 import { PendingProfileSetup } from '@/components/PendingProfileSetup';
+import { TimezoneSeeder } from '@/components/TimezoneSeeder';
 import { WagerSettlementRunner } from '@/components/WagerSettlementRunner';
 import { WidgetSync } from '@/components/WidgetSync';
+import { WorkoutsRealtime } from '@/components/WorkoutsRealtime';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { WorkoutCommentsProvider } from '@/lib/comments';
+import { ConnectivityProvider } from '@/lib/connectivity';
 import { CommentViewsProvider } from '@/lib/commentViews';
 import { HistoryProvider } from '@/lib/history';
 import { PartnershipProvider, usePartnership } from '@/lib/partnership';
@@ -49,28 +54,36 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <StatusBar style="light" />
-          <AuthProvider>
-            <SubscriptionProvider>
-              <PartnershipProvider>
-                <WorkoutsProvider>
-                  <HistoryProvider>
-                    <WorkoutCommentsProvider>
-                      <CommentViewsProvider>
-                        <WidgetSync />
-                        <WagerSettlementRunner />
-                        <PendingInvitePairer />
-                        <PendingInviteRegistrar />
-                        <PendingProfileSetup />
-                        <AuthGate />
-                        <PartnerJoinedToastHost />
-                        <PartnerLeftToastHost />
-                      </CommentViewsProvider>
-                    </WorkoutCommentsProvider>
-                  </HistoryProvider>
-                </WorkoutsProvider>
-              </PartnershipProvider>
-            </SubscriptionProvider>
-          </AuthProvider>
+          {/* Outermost so every provider below can consult connectivity when
+              deciding whether a failed fetch means "no data" or "no network". */}
+          <ConnectivityProvider>
+            <AuthProvider>
+              <SubscriptionProvider>
+                <PartnershipProvider>
+                  <WorkoutsProvider>
+                    <HistoryProvider>
+                      <WorkoutCommentsProvider>
+                        <CommentViewsProvider>
+                          <WidgetSync />
+                          <WorkoutsRealtime />
+                          <GeofenceSync />
+                          <WagerSettlementRunner />
+                          <PendingInvitePairer />
+                          <PendingInviteRegistrar />
+                          <PendingProfileSetup />
+                          <TimezoneSeeder />
+                          <AuthGate />
+                          <PartnerJoinedToastHost />
+                          <PartnerLeftToastHost />
+                          <OfflineBanner />
+                        </CommentViewsProvider>
+                      </WorkoutCommentsProvider>
+                    </HistoryProvider>
+                  </WorkoutsProvider>
+                </PartnershipProvider>
+              </SubscriptionProvider>
+            </AuthProvider>
+          </ConnectivityProvider>
         </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>

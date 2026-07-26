@@ -2,6 +2,7 @@ import { Share } from 'react-native';
 
 import { supabase } from './supabase';
 import type { Partnership } from '@/types/db';
+import { deviceTimezone } from './zonedTime';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 6;
@@ -47,7 +48,10 @@ export async function getOrCreateInviteCode(userId: string): Promise<string> {
     const code = generateInviteCode();
     const { data, error } = await supabase
       .from('partnerships')
-      .insert({ user_a: userId, invite_code: code })
+      // Stamp the creator's zone as the couple's canonical one. Without this a
+      // new partnership has timezone = NULL and both devices fall back to their
+      // own zone — the exact divergence this column exists to prevent.
+      .insert({ user_a: userId, invite_code: code, timezone: deviceTimezone() })
       .select('invite_code')
       .single();
     if (!error && data?.invite_code) return data.invite_code as string;

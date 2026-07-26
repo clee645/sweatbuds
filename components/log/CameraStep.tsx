@@ -36,6 +36,18 @@ const CAPTURE_TIMEOUT_MS = 8000;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CAMERA_WIDTH = SCREEN_WIDTH - spacing.lg * 2;
 
+// Capture failures are internal-detail errors ("Camera ref lost after lens
+// flip"), so map them to copy a user can act on rather than surfacing raw
+// Error.message. Timeouts get their own line because the fix differs — the
+// user waited ~9s and needs to know it's worth retrying.
+function captureErrorMessage(e: unknown): string {
+  const raw = e instanceof Error ? e.message : '';
+  if (raw.includes('timed out')) {
+    return "Camera timed out. Check that nothing else is using it, then try again.";
+  }
+  return "Couldn't capture. Hold steady and try again.";
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
@@ -58,6 +70,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
   const [facing, setFacing] = useState<CameraType>('front');
   const [flash, setFlash] = useState<FlashMode>('off');
   const [phase, setPhase] = useState<Phase>('idle');
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const cameraReadyResolveRef = useRef<(() => void) | null>(null);
   const cameraReadyRef = useRef<boolean>(false);
@@ -103,6 +116,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
     if (!prev && active) {
       setPhase('idle');
       setFacing('front');
+      setCaptureError(null);
     }
   }, [active]);
 
@@ -112,6 +126,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
 
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setCaptureError(null);
       setPhase('selfie');
 
       await waitForCameraReady();
@@ -149,11 +164,14 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onCapturesComplete({ selfieUri, environmentUri });
     } catch (e) {
-      // Reset so the user can try again.
+      // Reset so the user can try again. Without a visible message this reads
+      // as a mis-tap — console.warn is stripped from release builds, so the
+      // failure was previously invisible after a ~9s spinner.
       setPhase('idle');
       setFacing('front');
-      // eslint-disable-next-line no-console
-      console.warn('Capture failed', e);
+      setCaptureError(captureErrorMessage(e));
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      if (__DEV__) console.warn('Capture failed', e);
     }
   }, [onCapturesComplete, phase, waitForCameraReady]);
 
@@ -293,6 +311,11 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
             </View>
           ) : null}
         </View>
+        {captureError ? (
+          <Text style={styles.error} accessibilityRole="alert">
+            {captureError}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.controlsRow}>
@@ -391,6 +414,14 @@ const styles = StyleSheet.create({
     ...typography.bodyStrong,
     color: colors.text,
     fontSize: 15,
+  },
+  // Matches the inline-error idiom PreviewStep uses for the very next step.
+  error: {
+    ...typography.caption,
+    color: colors.danger,
+    textAlign: 'center',
+    width: CAMERA_WIDTH,
+    paddingTop: spacing.md,
   },
   controlsRow: {
     flexDirection: 'row',

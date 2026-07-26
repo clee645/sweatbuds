@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { CalendarDayTile } from '@/components/history/CalendarDayTile';
-import { isoLocalDate } from '@/lib/historyWeek';
+import { zonedDayOfWeek } from '@/lib/zonedTime';
 import { colors, spacing, typography } from '@/lib/theme';
 import type { Workout } from '@/types/db';
 
@@ -84,18 +84,20 @@ function buildCells(
   byDay: Record<string, Workout[]>,
   uriMap: Record<string, string>,
 ): Cell[] {
-  const firstOfMonth = new Date(year, month, 1);
-  // Mon=0..Sun=6 offset for the first row.
-  const leading = (firstOfMonth.getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  // Mon=0..Sun=6 offset for the first row. Derived from the calendar date
+  // itself rather than a local Date, so the grid can't shift with the device.
+  const leading = (zonedDayOfWeek(`${year}-${pad(month + 1)}-01`) + 6) % 7;
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 
   const cells: Cell[] = [];
   for (let i = 0; i < leading; i++) {
     cells.push({ dayNumber: null, isoDate: null, imageUri: null });
   }
   for (let day = 1; day <= daysInMonth; day++) {
-    const d = new Date(year, month, day);
-    const iso = isoLocalDate(d);
+    // Built from calendar parts directly — this is a grid cell, not an
+    // instant, so there is nothing to interpret in a timezone.
+    const iso = `${year}-${pad(month + 1)}-${pad(day)}`;
     const dayWorkouts = byDay[iso];
     let imageUri: string | null = null;
     if (dayWorkouts && dayWorkouts.length > 0) {

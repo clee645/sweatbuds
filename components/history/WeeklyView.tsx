@@ -27,23 +27,23 @@ type Props = {
 
 export function WeeklyView({ workouts, bottomPad }: Props) {
   const { user } = useAuth();
-  const { partnership, partner, anchorHistory } = usePartnership();
+  const { partnership, partner, anchorHistory, weekTimezone } = usePartnership();
   const { totalCount } = useWorkouts();
   const userId = user?.id ?? null;
   const partnerId = partner?.id ?? null;
   const target = partnership?.weekly_target ?? 3;
 
   const buckets = useMemo(
-    () => bucketWorkoutsByPartnershipWeek(workouts, partnership, anchorHistory),
-    [workouts, partnership, anchorHistory],
+    () => bucketWorkoutsByPartnershipWeek(workouts, partnership, anchorHistory, weekTimezone),
+    [workouts, partnership, anchorHistory, weekTimezone],
   );
 
   // The current week is in-progress and rendered separately on home; History
   // shows only weeks before the partnership's current week.
   const currentWeekStartMs = useMemo(() => {
-    const start = getPartnershipWeekStart(partnership);
+    const start = getPartnershipWeekStart(partnership, weekTimezone);
     return start ? start.getTime() : 0;
-  }, [partnership]);
+  }, [partnership, weekTimezone]);
   const pastBuckets = useMemo(
     () => buckets.filter((b) => b.weekStart.getTime() < currentWeekStartMs),
     [buckets, currentWeekStartMs],
@@ -58,6 +58,7 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
         userId,
         partnerId,
         target,
+        weekTimezone,
       ),
     [workouts, partnership, anchorHistory, userId, partnerId, target],
   );
@@ -145,6 +146,7 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
           userId={userId}
           partnerId={partnerId}
           target={target}
+          tz={weekTimezone}
           uriMap={uriMap}
         />
       )}
@@ -159,16 +161,18 @@ function BucketRow({
   userId,
   partnerId,
   target,
+  tz,
   uriMap,
 }: {
   bucket: WeekBucket;
   userId: string | null;
   partnerId: string | null;
   target: number;
+  tz: string;
   uriMap: Record<string, string>;
 }) {
-  const { a } = distinctDaysPerUser(bucket.workouts, userId, partnerId);
-  const goalHit = partnershipWeekGoalHit(bucket.workouts, userId, partnerId, target);
+  const { a } = distinctDaysPerUser(bucket.workouts, userId, partnerId, tz);
+  const goalHit = partnershipWeekGoalHit(bucket.workouts, userId, partnerId, target, tz);
   return (
     <WeekCard
       bucket={bucket}

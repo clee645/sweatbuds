@@ -107,11 +107,38 @@ export async function uploadWorkoutImage(
   const path = `${userId}/${workoutId}/${kind}.jpg`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, {
     contentType: 'image/jpeg',
-    upsert: false,
+    // Overwrite rather than collide: createWorkout reuses the same workoutId
+    // when the caller retries, so a retry after a partial failure has to be
+    // able to re-put an object that already landed.
+    upsert: true,
   });
   if (error) throw error;
 
   return path;
+}
+
+// Best-effort removal of workout storage objects. Used both by deleteWorkout
+// and by createWorkout's rollback, so a failed log leaves nothing behind.
+// Resolves false (rather than throwing) when the remove fails — callers are
+// either already unwinding a different error or have deleted the DB row, and
+// neither should be masked by a cleanup failure.
+export async function deleteWorkoutImages(paths: string[]): Promise<boolean> {
+  const targets = paths.filter((p) => p && !isHttpUrl(p));
+  if (targets.length === 0) return true;
+  try {
+    const { error } = await supabase.storage.from(BUCKET).remove(targets);
+    // Drop any cached signed URLs so a recycled path can't resolve to a stale
+    // token for an object that no longer exists.
+    for (const p of targets) signedUrlCache.delete(p);
+    if (error) {
+      if (__DEV__) console.warn('[storage] failed to remove objects', targets, error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    if (__DEV__) console.warn('[storage] failed to remove objects', targets, err);
+    return false;
+  }
 }
 
 export function base64ToBytes(base64: string): Uint8Array {

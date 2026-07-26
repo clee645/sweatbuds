@@ -22,6 +22,7 @@ type PromotionFields = { week_anchor_at: string; week_anchor_pending_at: null };
 // partnership becomes available.
 export function useWeekRollover(
   partnership: Partnership | null | undefined,
+  tz: string,
   onRollover: () => void,
   onPromote?: (fields: PromotionFields) => Promise<void> | void,
 ) {
@@ -37,7 +38,7 @@ export function useWeekRollover(
       return;
     }
 
-    const initialStart = getPartnershipWeekStart(partnership)?.getTime() ?? null;
+    const initialStart = getPartnershipWeekStart(partnership, tz)?.getTime() ?? null;
     if (lastWeekStartRef.current === null) {
       lastWeekStartRef.current = initialStart;
     }
@@ -50,7 +51,7 @@ export function useWeekRollover(
         void promoteRef.current(promotion);
       }
 
-      const start = getPartnershipWeekStart(partnership)?.getTime() ?? null;
+      const start = getPartnershipWeekStart(partnership, tz)?.getTime() ?? null;
       if (start === null) return;
       const last = lastWeekStartRef.current;
       if (last !== null && start > last) {
@@ -77,7 +78,7 @@ export function useWeekRollover(
     // for both.
     let timer: ReturnType<typeof setTimeout> | null = null;
     const scheduleNext = () => {
-      const ms = getMillisUntilNextRollover(partnership);
+      const ms = getMillisUntilNextRollover(partnership, tz);
       if (ms === null) return;
       timer = setTimeout(() => {
         check();
@@ -95,5 +96,6 @@ export function useWeekRollover(
     partnership?.paired_at,
     partnership?.week_anchor_at,
     partnership?.week_anchor_pending_at,
+    tz,
   ]);
 }

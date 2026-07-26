@@ -34,7 +34,7 @@ type DisplayWager = {
 export default function WagerBalanceScreen() {
   const navigation = useNavigation();
   const { user } = useAuth();
-  const { partnership, partner, anchorHistory } = usePartnership();
+  const { partnership, partner, anchorHistory, weekTimezone } = usePartnership();
   const { workouts: historyWorkouts } = useHistoryWorkouts();
   const { width } = useWindowDimensions();
 
@@ -153,13 +153,18 @@ export default function WagerBalanceScreen() {
     const target = partnership.weekly_target ?? 3;
     const now = Date.now();
     const mine = historyWorkouts.filter((w) => w.partnership_id === partnership.id);
-    const buckets = bucketWorkoutsByPartnershipWeek(mine, partnership, anchorHistory);
+    const buckets = bucketWorkoutsByPartnershipWeek(
+      mine,
+      partnership,
+      anchorHistory,
+      weekTimezone,
+    );
     // Buckets are newest-first; take the most recent completed eligible week.
     const recent = buckets.find(
       (b) => b.weekEnd.getTime() <= now && b.weekEnd.getTime() > epochMs,
     );
     if (!recent) return neutral;
-    if (partnershipWeekGoalHit(recent.workouts, userId, partner.id, target)) {
+    if (partnershipWeekGoalHit(recent.workouts, userId, partner.id, target, weekTimezone)) {
       return {
         title: 'You both hit your goal 🎉',
         subtitle: 'Nobody owes anything.',

@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { sharePartnerInvite } from '@/lib/invite';
 import { hasProEntitlement, restorePurchases } from '@/lib/revenuecat';
 import { useSubscription } from '@/lib/subscription';
@@ -39,7 +40,7 @@ export function LockedHome() {
     try {
       await sharePartnerInvite(userId);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Please try again.';
+      const message = toUserMessage(e);
       Alert.alert('Could not share invite', message);
     }
   };

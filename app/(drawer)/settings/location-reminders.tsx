@@ -53,7 +53,7 @@ export default function LocationRemindersRoute() {
     );
   }
 
-  return <GateScreen onPermissionMaybeChanged={refresh} />;
+  return <GateScreen level={level} onPermissionMaybeChanged={refresh} />;
 }
 
 const styles = StyleSheet.create({

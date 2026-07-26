@@ -18,6 +18,7 @@ import {
 
 import { useAuth } from '@/lib/auth';
 import { uploadAvatar } from '@/lib/avatar';
+import { toUserMessage } from '@/lib/errors';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -75,7 +76,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
         try {
           nextAvatarUrl = await uploadAvatar(pendingUri, user.id);
         } catch (uploadErr) {
-          const m = uploadErr instanceof Error ? uploadErr.message : 'Unknown error';
+          const m = toUserMessage(uploadErr, 'Unknown error');
           throw new Error(`Avatar upload failed: ${m}`);
         }
       }
@@ -90,7 +91,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
       await refreshProfile();
       onClose();
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Try again.';
+      const message = toUserMessage(e, 'Try again.');
       Alert.alert('Could not save', message);
     } finally {
       setSaving(false);

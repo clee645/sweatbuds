@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { DayThumbnail } from '@/components/history/DayThumbnail';
 import { formatWeekRange, type WeekBucket } from '@/lib/historyWeek';
+import { addZonedDays, zonedDayOfWeek, zonedMonthDay } from '@/lib/zonedTime';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import type { Workout } from '@/types/db';
 
@@ -21,7 +22,7 @@ type Props = {
 };
 
 export function WeekCard({ bucket, goalHit, userDays, weeklyTarget, uriMap }: Props) {
-  const range = formatWeekRange(bucket.weekStart, bucket.weekEnd);
+  const range = formatWeekRange(bucket.startYmd, bucket.endYmd);
   const displayDays = Math.min(userDays, weeklyTarget);
 
   return (
@@ -45,16 +46,16 @@ export function WeekCard({ bucket, goalHit, userDays, weeklyTarget, uriMap }: Pr
         {chunkRows(bucket.dayCount).map((row, rowIdx) => (
           <View key={rowIdx} style={styles.daysRow}>
             {row.map((i) => {
-              const dayDate = dayDateFor(bucket.weekStart, i);
-              const letter = JS_DAY_LETTERS[dayDate.getDay()];
+              const dayYmd = addZonedDays(bucket.startYmd, i);
+              const letter = JS_DAY_LETTERS[zonedDayOfWeek(dayYmd)];
               const dayWorkouts = bucket.byDay[i];
               const earliest = pickEarliest(dayWorkouts);
               const uri = earliest ? (uriMap[earliest.selfie_path] ?? null) : null;
               return (
                 <DayThumbnail
-                  key={`${bucket.weekStart.getTime()}-${i}`}
+                  key={`${bucket.startYmd}-${i}`}
                   letter={letter}
-                  dayNumber={dayDate.getDate()}
+                  dayNumber={zonedMonthDay(dayYmd).day}
                   imageUri={uri}
                 />
               );
@@ -91,12 +92,6 @@ function pickEarliest(workouts: Workout[]): Workout | null {
     }
   }
   return earliest;
-}
-
-function dayDateFor(weekStart: Date, dayIndex: number): Date {
-  const d = new Date(weekStart);
-  d.setDate(d.getDate() + dayIndex);
-  return d;
 }
 
 const styles = StyleSheet.create({

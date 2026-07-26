@@ -1,7 +1,7 @@
 import { router, useNavigation } from 'expo-router';
 import { DrawerActions } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyHero } from '@/components/home/EmptyHero';
@@ -14,9 +14,10 @@ import { StakesCard } from '@/components/home/StakesCard';
 import { ThisWeekCard } from '@/components/home/ThisWeekCard';
 import { WorkoutCarousel } from '@/components/home/WorkoutCarousel';
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { sharePartnerInvite } from '@/lib/invite';
 import { usePartnership } from '@/lib/partnership';
-import { colors, spacing } from '@/lib/theme';
+import { colors, spacing, typography } from '@/lib/theme';
 import { useAccessGate } from '@/lib/useAccessGate';
 import { useWeekRollover } from '@/lib/useWeekRollover';
 import { DEFAULT_WAGER, type WagerRule } from '@/lib/wagers';
@@ -25,8 +26,10 @@ import {
   getWeekWindow,
   partnershipWeekStreak,
   weekProgressFromWorkouts,
+  workoutYmd,
 } from '@/lib/week';
 import { useWorkouts } from '@/lib/workouts';
+import { deviceTimezone, zonedYmd } from '@/lib/zonedTime';
 import type { Workout } from '@/types/db';
 
 const ROLLOVER_ANIM_MS = 700;
@@ -34,11 +37,12 @@ const ROLLOVER_ANIM_MS = 700;
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { user, profile } = useAuth();
-  const { workouts, loading: workoutsLoading } = useWorkouts();
+  const { workouts, loading: workoutsLoading, error: workoutsError } = useWorkouts();
   const {
     partnership,
     partner,
     anchorHistory,
+    weekTimezone,
     loading: partnershipLoading,
     freshlyPaired,
     applyAnchorPromotion,
@@ -64,8 +68,8 @@ export default function HomeScreen() {
     partnership && partnership.status === 'active' && partnership.paired_at && partner,
   );
 
-  const paidAnchor = getPairedAnchor(partnership);
-  const weekWindow = isPaired ? getWeekWindow(partnership) : null;
+  const paidAnchor = getPairedAnchor(partnership, weekTimezone);
+  const weekWindow = isPaired ? getWeekWindow(partnership, weekTimezone) : null;
   const weekStart = weekWindow?.weekStart ?? null;
   const weekEnd = weekWindow?.weekEnd ?? null;
 
@@ -92,6 +96,7 @@ export default function HomeScreen() {
 
   useWeekRollover(
     partnership,
+    weekTimezone,
     () => {
       const snapshot = thisWeekRef.current;
       if (snapshot.length === 0) return;
@@ -135,7 +140,7 @@ export default function HomeScreen() {
     try {
       await sharePartnerInvite(user.id);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Please try again.';
+      const message = toUserMessage(e);
       Alert.alert('Could not create invite', message);
     }
   };
@@ -153,6 +158,7 @@ export default function HomeScreen() {
           avatar_url: null,
           created_at: '',
           timezone: null,
+          timezone_set_by_user: false,
           is_pro: false,
         }
       : null);
@@ -167,20 +173,20 @@ export default function HomeScreen() {
     : DEFAULT_WAGER;
 
   const userWeek = profileForWeek
-    ? weekProgressFromWorkouts(workouts, profileForWeek, target, weekStart, weekEnd)
+    ? weekProgressFromWorkouts(workouts, profileForWeek, weekTimezone, target, weekStart, weekEnd)
     : null;
   const partnerWeek = partner
-    ? weekProgressFromWorkouts(workouts, partner, target, weekStart, weekEnd)
+    ? weekProgressFromWorkouts(workouts, partner, weekTimezone, target, weekStart, weekEnd)
     : null;
 
-  const hasLoggedToday = workouts.some((w) => {
-    if (!user || w.user_id !== user.id) return false;
-    const t = new Date(w.logged_at);
-    if (Number.isNaN(t.getTime())) return false;
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    return t.getTime() >= startOfToday.getTime();
-  });
+  // "Have I logged today?" is a PERSONAL question — it's my day, where I'm
+  // standing, matching the zone a workout would be stamped with right now.
+  // Deliberately not the partnership zone: my partner's midnight is not mine.
+  const myTz = deviceTimezone();
+  const todayYmd = zonedYmd(new Date(), myTz);
+  const hasLoggedToday = workouts.some(
+    (w) => Boolean(user) && w.user_id === user!.id && workoutYmd(w, myTz) === todayYmd,
+  );
 
   // Combined workouts the couple has logged in the current week — shown until
   // the partnership has its first goal-hit week and the pill swaps to streak.
@@ -194,6 +200,7 @@ export default function HomeScreen() {
         user?.id ?? null,
         partner?.id ?? null,
         target,
+        weekTimezone,
       )
     : 0;
 
@@ -205,7 +212,11 @@ export default function HomeScreen() {
   // - Paired + no workouts this week: FreshWeekHero.
   // - Paired + has workouts this week: WorkoutCarousel filtered to this week.
   let hero: React.ReactNode;
-  if (archivingSnapshot) {
+  if (workoutsError && workouts.length === 0) {
+    // Distinguish "couldn't load" from "nothing logged yet" — an offline user
+    // used to see the empty-state hero, which reads as data loss.
+    hero = <Text style={styles.loadError}>{workoutsError}</Text>;
+  } else if (archivingSnapshot) {
     hero = <WorkoutCarousel workouts={archivingSnapshot} archiving />;
   } else if (!isPaired) {
     hero = workouts.length === 0 ? <EmptyHero /> : <WorkoutCarousel workouts={workouts} />;
@@ -269,6 +280,14 @@ const styles = StyleSheet.create({
     flex: 3.2,
     minHeight: 0,
     marginHorizontal: -spacing.md,
+  },
+  loadError: {
+    ...typography.body,
+    color: colors.textDim,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    flex: 1,
+    paddingHorizontal: spacing.xl,
   },
   shiftUp: {
     marginTop: -spacing.md,

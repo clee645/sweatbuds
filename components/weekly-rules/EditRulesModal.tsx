@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { toUserMessage } from '@/lib/errors';
 import { usePartnership, type PartnershipUpdateFields } from '@/lib/partnership';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import {
@@ -63,7 +64,7 @@ export function EditRulesModal({ visible, initialDays, initialWager, onClose }: 
       }
       onClose();
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Try again.';
+      const message = toUserMessage(e, 'Try again.');
       Alert.alert('Could not save rules', message);
     } finally {
       setSaving(false);

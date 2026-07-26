@@ -8,6 +8,7 @@ import { usePartnership } from '@/lib/partnership';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import { getPairedAnchor } from '@/lib/week';
+import { zonedYmd } from '@/lib/zonedTime';
 import type { Workout } from '@/types/db';
 
 type Props = {
@@ -18,37 +19,45 @@ type Props = {
 type MonthEntry = { year: number; month: number };
 
 export function CalendarView({ workouts, bottomPad }: Props) {
-  const { partnership } = usePartnership();
+  const { partnership, weekTimezone } = usePartnership();
 
   // Couple's calendar shows only days from `paired_at` forward; pre-pair
   // workouts stay in the user's personal record but don't belong on the
   // shared memories surface. The fetch is already partnership-scoped, but
   // this cutoff is defense-in-depth.
   const coupleWorkouts = useMemo(() => {
-    const anchor = getPairedAnchor(partnership);
+    const anchor = getPairedAnchor(partnership, weekTimezone);
     if (!anchor) return workouts;
     const anchorMs = anchor.getTime();
     return workouts.filter((w) => {
       const t = new Date(w.logged_at).getTime();
       return !Number.isNaN(t) && t >= anchorMs;
     });
-  }, [workouts, partnership]);
+  }, [workouts, partnership, weekTimezone]);
 
-  const byDay = useMemo(() => bucketWorkoutsByDay(coupleWorkouts), [coupleWorkouts]);
+  const byDay = useMemo(
+    () => bucketWorkoutsByDay(coupleWorkouts, weekTimezone),
+    [coupleWorkouts, weekTimezone],
+  );
 
   // Months from the very first workout's month → current month, chronological
   // (earliest at top). If no workouts ever, just render the current month
   // with all-muted cells so the empty calendar still feels like a real surface.
   const months = useMemo<MonthEntry[]>(() => {
-    const now = new Date();
-    const currentY = now.getFullYear();
-    const currentM = now.getMonth();
+    // Resolved in the couple's zone so the month headers agree with the day
+    // cells beneath them, which are keyed the same way.
+    const nowYmd = zonedYmd(new Date(), weekTimezone);
+    const currentY = Number(nowYmd.slice(0, 4));
+    const currentM = Number(nowYmd.slice(5, 7)) - 1;
     if (coupleWorkouts.length === 0) {
       return [{ year: currentY, month: currentM }];
     }
-    const earliest = new Date(coupleWorkouts[coupleWorkouts.length - 1].logged_at);
-    const earliestY = earliest.getFullYear();
-    const earliestM = earliest.getMonth();
+    const earliestYmd = zonedYmd(
+      coupleWorkouts[coupleWorkouts.length - 1].logged_at,
+      weekTimezone,
+    );
+    const earliestY = Number(earliestYmd.slice(0, 4));
+    const earliestM = Number(earliestYmd.slice(5, 7)) - 1;
     const list: MonthEntry[] = [];
     let y = earliestY;
     let m = earliestM;
@@ -61,7 +70,7 @@ export function CalendarView({ workouts, bottomPad }: Props) {
       }
     }
     return list;
-  }, [coupleWorkouts]);
+  }, [coupleWorkouts, weekTimezone]);
 
   // Resolve signed URLs for the earliest selfie of every day. One batch up
   // front, then the storage cache feeds month-by-month renders for free.

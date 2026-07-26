@@ -22,12 +22,14 @@ import { CommentComposer } from '@/components/photo-detail/CommentComposer';
 import { WorkoutPage } from '@/components/photo-detail/WorkoutPage';
 import { useAuth } from '@/lib/auth';
 import { useWorkoutComments } from '@/lib/comments';
+import { toUserMessage } from '@/lib/errors';
 import { useHistoryWorkouts } from '@/lib/history';
-import { isoLocalDate } from '@/lib/historyWeek';
 import { usePartnership } from '@/lib/partnership';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, spacing, typography } from '@/lib/theme';
+import { useWorkoutSync } from '@/lib/workoutSync';
 import { deleteWorkout } from '@/lib/workouts';
+import { workoutYmd } from '@/lib/historyWeek';
 import type { Profile, Workout } from '@/types/db';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -49,19 +51,21 @@ export default function DayMemoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { date } = useLocalSearchParams<{ date: string }>();
-  const { workouts: allWorkouts, removeWorkout } = useHistoryWorkouts();
+  const { workouts: allWorkouts } = useHistoryWorkouts();
+  const { removeWorkoutLocal } = useWorkoutSync();
   const { user, profile } = useAuth();
-  const { partner } = usePartnership();
+  const { partner, weekTimezone } = usePartnership();
   const { byWorkout, add: addComment } = useWorkoutComments();
 
-  // Workouts logged on the tapped local date, oldest first so swiping forward
+  // Workouts logged on the tapped calendar date (couple's zone), oldest first
+  // so swiping forward
   // walks the day chronologically.
   const dayWorkouts = useMemo(() => {
     if (!date) return [] as Workout[];
     return allWorkouts
-      .filter((w) => isoLocalDate(new Date(w.logged_at)) === date)
+      .filter((w) => workoutYmd(w, weekTimezone) === date)
       .sort((a, b) => +new Date(a.logged_at) - +new Date(b.logged_at));
-  }, [allWorkouts, date]);
+  }, [allWorkouts, date, weekTimezone]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -166,11 +170,11 @@ export default function DayMemoryScreen() {
           onPress: async () => {
             try {
               await deleteWorkout(active);
-              removeWorkout(active.id);
+              removeWorkoutLocal(active.id);
             } catch (err) {
               Alert.alert(
                 'Could not delete',
-                err instanceof Error ? err.message : 'Please try again.',
+                toUserMessage(err),
               );
             }
           },

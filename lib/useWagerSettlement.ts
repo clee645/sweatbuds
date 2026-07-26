@@ -15,7 +15,7 @@ import { getMillisUntilNextRollover } from './week';
 // app root (see `components/WagerSettlementRunner.tsx`).
 export function useWagerSettlement() {
   const { user } = useAuth();
-  const { partnership, partner, anchorHistory } = usePartnership();
+  const { partnership, partner, anchorHistory, weekTimezone } = usePartnership();
   const { workouts } = useHistoryWorkouts();
 
   const userId = user?.id ?? null;
@@ -23,15 +23,21 @@ export function useWagerSettlement() {
 
   // Keep the latest inputs in a ref so the run function is stable and the
   // boundary timer / AppState listener always see current data.
-  const argsRef = useRef({ partnership, anchorHistory, workouts, userId, partnerId });
-  argsRef.current = { partnership, anchorHistory, workouts, userId, partnerId };
+  const argsRef = useRef({ partnership, anchorHistory, workouts, userId, partnerId, weekTimezone });
+  argsRef.current = { partnership, anchorHistory, workouts, userId, partnerId, weekTimezone };
 
   const runningRef = useRef(false);
 
   const run = useRef(async () => {
     if (runningRef.current) return;
-    const { partnership: p, anchorHistory: ah, workouts: w, userId: uid, partnerId: pid } =
-      argsRef.current;
+    const {
+      partnership: p,
+      anchorHistory: ah,
+      workouts: w,
+      userId: uid,
+      partnerId: pid,
+      weekTimezone: tz,
+    } = argsRef.current;
     if (!p || p.status !== 'active' || !uid || !pid) return;
     runningRef.current = true;
     try {
@@ -41,6 +47,7 @@ export function useWagerSettlement() {
         workouts: w,
         userId: uid,
         partnerId: pid,
+        tz,
       });
     } catch {
       // Best-effort; a failed pass simply retries on the next trigger.
@@ -75,7 +82,10 @@ export function useWagerSettlement() {
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     const scheduleNext = () => {
-      const ms = getMillisUntilNextRollover(argsRef.current.partnership);
+      const ms = getMillisUntilNextRollover(
+        argsRef.current.partnership,
+        argsRef.current.weekTimezone,
+      );
       if (ms === null) return;
       timer = setTimeout(() => {
         void run();

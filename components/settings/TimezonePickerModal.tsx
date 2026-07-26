@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -91,13 +92,15 @@ export function TimezonePickerModal({ visible, onClose }: Props) {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ timezone: zone })
+        // Recording the choice on the account stops TimezoneSeeder ever
+        // auto-detecting over it again — on this device or any future one.
+        .update({ timezone: zone, timezone_set_by_user: true })
         .eq('id', user.id);
       if (error) throw error;
       await refreshProfile();
       onClose();
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Try again.';
+      const message = toUserMessage(e, 'Try again.');
       Alert.alert('Could not update timezone', message);
     } finally {
       setSavingZone(null);
@@ -132,6 +135,11 @@ export function TimezonePickerModal({ visible, onClose }: Props) {
             </Pressable>
           ) : null}
         </View>
+
+        <Text style={styles.note}>
+          Sets which day new workouts count toward. Past workouts stay on the days
+          they happened.
+        </Text>
 
         <FlatList
           data={filtered}
@@ -189,6 +197,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
     height: 40,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  note: {
+    ...typography.caption,
+    color: colors.textDim,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },

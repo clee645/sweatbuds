@@ -67,7 +67,6 @@ export default function DrawerLayout() {
         name="settings/location-reminders"
         options={{ title: 'Location Reminders', drawerItemStyle: { display: 'none' } }}
       />
-      <Drawer.Screen name="support" options={{ title: 'Support' }} />
     </Drawer>
   );
 }

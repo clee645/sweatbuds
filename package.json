@@ -7,7 +7,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -32,6 +33,7 @@
     "expo-linking": "~8.0.12",
     "expo-location": "~19.0.8",
     "expo-media-library": "~18.2.1",
+    "expo-network": "~8.0.8",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.23",
     "expo-splash-screen": "~31.0.13",
@@ -61,8 +63,12 @@
   "devDependencies": {
     "@bacons/apple-targets": "^4.0.6",
     "@types/react": "~19.1.0",
+    "babel-plugin-transform-remove-console": "^6.9.4",
     "babel-preset-expo": "^55.0.18",
-    "typescript": "~5.9.2"
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~10.0.0",
+    "typescript": "~5.9.2",
+    "vitest": "^4.1.10"
   },
   "private": true
 }

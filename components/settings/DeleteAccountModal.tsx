@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { clearOnboardingSeen, clearPaywallSeen } from '@/lib/onboarding';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
@@ -53,7 +54,7 @@ export function DeleteAccountModal({ visible, onClose }: Props) {
       await clearPaywallSeen();
       await signOut();
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Please try again.';
+      const message = toUserMessage(e);
       Alert.alert('Could not delete account', message);
       setDeleting(false);
     }

@@ -3,16 +3,21 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 import { useAuth } from '@/lib/auth';
 import { useWorkoutComments } from '@/lib/comments';
+import { useHistoryWorkouts } from '@/lib/history';
 import { attachWidgetRefreshOnPush } from '@/lib/notifications';
 import { usePartnership } from '@/lib/partnership';
 import { syncPartnerLatestToWidget } from '@/lib/widget';
 import { useWorkouts } from '@/lib/workouts';
 
-// Mounted once at the root, after the auth/partnership/workouts providers.
-// Drives partner-latest widget refreshes:
+// Mounted once at the root, after the auth/partnership/workouts/history
+// providers. Despite the name this is the app-wide data-sync hub: it drives
+// partner-latest widget refreshes
 //   - whenever the partner profile resolves or changes
 //   - on each app foreground (debounced inside lib/widget.ts)
-// Self-log writes happen inline at the log-success site.
+// and fans app foreground / push receipt out to the partnership, workouts,
+// history, and comments providers. Self-log writes happen inline at the
+// log-success site. Live in-session propagation of a partner's workout is
+// handled separately by <WorkoutsRealtime />.
 export function WidgetSync() {
   const { user } = useAuth();
   const {
@@ -22,6 +27,7 @@ export function WidgetSync() {
     refresh: refreshPartnership,
   } = usePartnership();
   const { refresh: refreshWorkouts } = useWorkouts();
+  const { refresh: refreshHistory } = useHistoryWorkouts();
   const { refresh: refreshComments } = useWorkoutComments();
   const lastPartnerIdRef = useRef<string | null>(null);
   const hasWrittenInitialRef = useRef(false);
@@ -61,6 +67,10 @@ export function WidgetSync() {
         void syncPartnerLatestToWidget({ partner, partnership, weeklyTarget });
       }
       void refreshWorkouts();
+      // History is a separate all-time provider with no refresh triggers of
+      // its own — without this the History tab (and the wager settlement that
+      // reads it) stays on whatever was loaded at app start.
+      void refreshHistory();
     };
     const sub = AppState.addEventListener('change', handler);
     return () => sub.remove();
@@ -70,6 +80,7 @@ export function WidgetSync() {
     partnership,
     weeklyTarget,
     refreshWorkouts,
+    refreshHistory,
     refreshPartnership,
     partnershipLoading,
   ]);
@@ -82,6 +93,7 @@ export function WidgetSync() {
     partnership,
     weeklyTarget,
     refreshWorkouts,
+    refreshHistory,
     refreshPartnership,
     refreshComments,
   });
@@ -90,6 +102,7 @@ export function WidgetSync() {
     partnership,
     weeklyTarget,
     refreshWorkouts,
+    refreshHistory,
     refreshPartnership,
     refreshComments,
   };

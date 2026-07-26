@@ -33,6 +33,13 @@ type SubscriptionContextValue = {
 
 const SubscriptionContext = createContext<SubscriptionContextValue | undefined>(undefined);
 
+// How long we'll hold `loading` waiting on RevenueCat before giving up. The
+// helpers in revenuecat.ts already catch rejections; this covers the other
+// failure shape — a native StoreKit promise that never settles at all. There's
+// no client-side timeout in the SDK, and `loading` gates BrandedSplash, so
+// without this a single hung call strands the app on the splash forever.
+const SUBSCRIPTION_SETTLE_MS = 8000;
+
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
   // SubscriptionProvider is nested inside AuthProvider, so the signed-in user
   // is available here — used to reconcile the durable profiles.is_pro /
@@ -54,11 +61,19 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    const [info, current] = await Promise.all([getCustomerInfo(), getCurrentOffering()]);
-    if (!mountedRef.current) return;
-    setCustomerInfo(info);
-    setOffering(current);
-    setLoading(false);
+    try {
+      const [info, current] = await Promise.all([getCustomerInfo(), getCurrentOffering()]);
+      if (!mountedRef.current) return;
+      setCustomerInfo(info);
+      setOffering(current);
+    } catch (err) {
+      // Both helpers swallow their own errors, so this is belt-and-suspenders.
+      // The provider MUST settle regardless: `loading` gates useAccessGate,
+      // which renders BrandedSplash — never leave it stuck true.
+      if (__DEV__) console.warn('[subscription] refresh failed', err);
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -76,6 +91,17 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       Purchases.removeCustomerInfoUpdateListener(listener);
     };
   }, [refresh]);
+
+  // Watchdog: settle unconditionally so the access gate falls through to the
+  // durable profiles.is_pro bridge instead of waiting on a call that may never
+  // return. Nothing is lost by settling early — the customerInfo listener above
+  // and the userId effect below still apply the real state once it lands.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (mountedRef.current) setLoading(false);
+    }, SUBSCRIPTION_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Re-pull customer info once the authenticated user is known. auth.tsx
   // dispatches Purchases.logIn(userId) on the same change; this ensures the

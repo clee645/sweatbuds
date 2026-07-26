@@ -19,6 +19,7 @@ import {
   shareToInstagramStory,
   shareViaSystem,
 } from '@/lib/share';
+import { toUserMessage } from '@/lib/errors';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import { useWorkouts } from '@/lib/workouts';
@@ -72,7 +73,7 @@ export default function ShareSweatcamScreen() {
     } catch (err) {
       Alert.alert(
         'Could not share',
-        err instanceof Error ? err.message : 'Please try again.',
+        toUserMessage(err),
       );
     } finally {
       setBusy(false);

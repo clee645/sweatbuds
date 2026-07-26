@@ -116,9 +116,11 @@ function workoutIdFromData(data: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
 }
 
-// Wires push receipt to widget + workouts + partnership + comments refresh.
-// Handles three push kinds:
-//   - partner_logged:    a workout went up; refresh widget + carousel.
+// Wires push receipt to widget + workouts + history + partnership + comments
+// refresh. Handles three push kinds:
+//   - partner_logged:    a workout went up; refresh widget + carousel + history.
+//     (history is deliberately NOT refreshed on partner_commented — a comment
+//     can't change the workout set, and history's query is unbounded all-time.)
 //   - partner_paired:    status flipped to active; refresh partnership FIRST
 //                        so the partner profile resolves locally, then sync.
 //   - partner_commented: partner left a comment; refresh comments. On tap,
@@ -128,6 +130,7 @@ export function attachWidgetRefreshOnPush(getCurrent: () => {
   partnership: Partnership | null;
   weeklyTarget: number;
   refreshWorkouts: () => Promise<void>;
+  refreshHistory: () => Promise<void>;
   refreshPartnership: () => Promise<void>;
   refreshComments: () => Promise<void>;
 }): () => void {
@@ -147,14 +150,20 @@ export function attachWidgetRefreshOnPush(getCurrent: () => {
     if (kind === 'partner_left') {
       // Partnership is gone; drop local state to solo. The PartnershipProvider's
       // refresh() detects the active->none transition and shows the toast.
-      const { refreshPartnership, refreshWorkouts } = getCurrent();
+      const { refreshPartnership, refreshWorkouts, refreshHistory } = getCurrent();
       await refreshPartnership();
-      await refreshWorkouts();
+      await Promise.all([refreshWorkouts(), refreshHistory()]);
       return;
     }
 
-    const { partner, partnership, weeklyTarget, refreshWorkouts, refreshComments } =
-      getCurrent();
+    const {
+      partner,
+      partnership,
+      weeklyTarget,
+      refreshWorkouts,
+      refreshHistory,
+      refreshComments,
+    } = getCurrent();
 
     if (kind === 'partner_commented') {
       await Promise.all([refreshWorkouts(), refreshComments()]);
@@ -164,6 +173,7 @@ export function attachWidgetRefreshOnPush(getCurrent: () => {
     await Promise.all([
       syncPartnerLatestToWidget({ partner, partnership, weeklyTarget, force: true }),
       refreshWorkouts(),
+      refreshHistory(),
     ]);
   };
 

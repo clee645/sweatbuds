@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -32,13 +33,28 @@ import {
   isDuplicate,
   primeNameCache,
 } from '@/lib/location/savedLocations';
+import { useNotificationPermission } from '@/lib/location/useNotificationPermission';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import type { SavedLocation } from '@/types/db';
 
 const NEARBY_DEFAULT_QUERY = 'gym';
 
+// syncGeofences hands the region list to CoreLocation and can reject — a
+// misconfigured Info.plist, or permission revoked between renders. These calls
+// are fire-and-forget (the saved list on screen is already correct; only
+// background registration failed), so swallow it rather than letting it surface
+// as an uncaught promise rejection redbox.
+function pushGeofences(list: SavedLocation[]): void {
+  void syncGeofences(list).catch((e) => console.warn('[geofence] sync failed', e));
+}
+
 export function ManagerScreen() {
   const { user } = useAuth();
+  const {
+    level: notificationLevel,
+    loading: notificationLoading,
+    refresh: refreshNotifications,
+  } = useNotificationPermission();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MapKitPlace[]>([]);
   const [searching, setSearching] = useState(false);
@@ -75,7 +91,7 @@ export function ManagerScreen() {
       }
       setSaved(list);
       await primeNameCache(list);
-      void syncGeofences(list);
+      pushGeofences(list);
       setLoadingSaved(false);
       // Kick off an initial nearby-gym search so the list isn't empty.
       runSearch('');
@@ -112,6 +128,22 @@ export function ManagerScreen() {
 
   const atCap = saved.length >= MAX_LOCATIONS;
 
+  // Location permission alone is not enough — arrival events fire but the
+  // reminder has no way to reach the user. Surface that here, since a user who
+  // is already on "Always" never passes through GateScreen.
+  const notificationsBlocked = !notificationLoading && notificationLevel !== 'granted';
+
+  const fixNotifications = () => {
+    if (notificationLevel === 'denied') {
+      void Linking.openSettings();
+      return;
+    }
+    void (async () => {
+      await ensureNotificationPermission();
+      await refreshNotifications();
+    })();
+  };
+
   const handleConfirmAdd = async (place: MapKitPlace) => {
     if (!user) return;
     if (atCap) {
@@ -129,7 +161,7 @@ export function ManagerScreen() {
       return;
     }
 
-    void ensureNotificationPermission();
+    void ensureNotificationPermission().then(() => refreshNotifications());
 
     const inserted = await addSavedLocation({
       userId: user.id,
@@ -142,7 +174,7 @@ export function ManagerScreen() {
 
     const next = [inserted, ...saved];
     setSaved(next);
-    void syncGeofences(next);
+    pushGeofences(next);
     setPendingPlace(null);
     setToastVisible(true);
     searchInputRef.current?.blur();
@@ -154,7 +186,7 @@ export function ManagerScreen() {
     await deleteSavedLocation(location.id);
     const next = saved.filter((s) => s.id !== location.id);
     setSaved(next);
-    void syncGeofences(next);
+    pushGeofences(next);
     setRemoveTarget(null);
   };
 
@@ -210,6 +242,21 @@ export function ManagerScreen() {
           <Ionicons name="map-outline" size={18} color={colors.textMuted} />
         </Pressable>
       </View>
+
+      {notificationsBlocked ? (
+        <Pressable
+          onPress={fixNotifications}
+          style={({ pressed }) => [styles.notifyWarning, pressed && styles.pressed]}
+        >
+          <Ionicons name="notifications-off-outline" size={16} color={colors.warning} />
+          <Text style={styles.notifyWarningText}>
+            Notifications are off, so we can't nudge you when you arrive.{' '}
+            <Text style={styles.notifyWarningAction}>
+              {notificationLevel === 'denied' ? 'Open Settings' : 'Turn on'}
+            </Text>
+          </Text>
+        </Pressable>
+      ) : null}
 
       {atCap ? (
         <Text style={styles.capHint}>You can save up to {MAX_LOCATIONS} locations.</Text>
@@ -343,6 +390,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     marginHorizontal: spacing.xs,
   },
+  notifyWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.md,
+    backgroundColor: colors.cardMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.warning,
+  },
+  notifyWarningText: {
+    flex: 1,
+    ...typography.caption,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  notifyWarningAction: {
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  pressed: { opacity: 0.6 },
   capHint: {
     ...typography.caption,
     color: colors.warning,

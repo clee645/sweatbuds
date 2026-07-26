@@ -1,13 +1,16 @@
+import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { CameraStep } from '@/components/log/CameraStep';
 import { PreviewStep } from '@/components/log/PreviewStep';
 import { SuccessStep } from '@/components/log/SuccessStep';
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { usePartnership } from '@/lib/partnership';
 import { colors } from '@/lib/theme';
+import { useWorkoutSync } from '@/lib/workoutSync';
 import { createWorkout, useWorkouts } from '@/lib/workouts';
 import type { Workout } from '@/types/db';
 
@@ -16,7 +19,8 @@ type Step = 'camera' | 'preview' | 'success';
 export default function LogWorkoutScreen() {
   const router = useRouter();
   const { user, profile } = useAuth();
-  const { workouts, prependWorkout } = useWorkouts();
+  const { workouts } = useWorkouts();
+  const { addWorkoutLocal } = useWorkoutSync();
   const { partnership } = usePartnership();
 
   const [step, setStep] = useState<Step>('camera');
@@ -27,8 +31,14 @@ export default function LogWorkoutScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savedWorkout, setSavedWorkout] = useState<Workout | null>(null);
 
+  // One id per capture session, minted when the photos are taken and held
+  // across retries so a failed log re-puts the same storage paths instead of
+  // orphaning a fresh pair on every attempt. Cleared on retake.
+  const workoutIdRef = useRef<string | null>(null);
+
   const handleCapturesComplete = useCallback(
     ({ selfieUri: s, environmentUri: e }: { selfieUri: string; environmentUri: string }) => {
+      workoutIdRef.current = randomUUID();
       setSelfieUri(s);
       setEnvironmentUri(e);
       setStep('preview');
@@ -37,6 +47,7 @@ export default function LogWorkoutScreen() {
   );
 
   const handleRetake = useCallback(() => {
+    workoutIdRef.current = null;
     setSelfieUri(null);
     setEnvironmentUri(null);
     setCaption('');
@@ -64,22 +75,23 @@ export default function LogWorkoutScreen() {
         selfieUri,
         environmentUri,
         caption: caption.trim() || null,
+        workoutId: workoutIdRef.current ?? undefined,
       });
-      prependWorkout(workout);
+      addWorkoutLocal(workout);
       setSavedWorkout(workout);
       setStep('success');
     } catch (e) {
       setErrorMessage(
-        e instanceof Error ? e.message : 'Could not log workout. Try again.',
+        toUserMessage(e, 'Could not log workout. Try again.'),
       );
     } finally {
       setSubmitting(false);
     }
   }, [
+    addWorkoutLocal,
     caption,
     environmentUri,
     partnership,
-    prependWorkout,
     selfieUri,
     submitting,
     user,
@@ -127,6 +139,7 @@ export default function LogWorkoutScreen() {
               avatar_url: null,
               created_at: new Date().toISOString(),
               timezone: null,
+              timezone_set_by_user: false,
               is_pro: false,
             }
           }

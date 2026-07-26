@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -41,7 +42,7 @@ export default function RequestFeatureScreen() {
       Alert.alert('Thanks!', 'We got your idea.');
       router.back();
     } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : 'Could not send. Try again.');
+      setErrorMessage(toUserMessage(e, 'Could not send. Try again.'));
     } finally {
       setSubmitting(false);
     }

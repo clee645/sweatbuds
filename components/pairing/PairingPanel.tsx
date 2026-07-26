@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { toUserMessage } from '@/lib/errors';
 import {
   formatCode,
   getOrCreateInviteCode,
@@ -88,7 +89,7 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
       }
       await onPaired(partnerName);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Please try again.';
+      const message = toUserMessage(e);
       Alert.alert('Could not pair', message);
     } finally {
       setPairing(false);
@@ -107,7 +108,7 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
     try {
       await sharePartnerInvite(userId);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Please try again.';
+      const message = toUserMessage(e);
       Alert.alert('Could not share invite', message);
     }
   };

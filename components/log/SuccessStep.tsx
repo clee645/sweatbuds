@@ -33,11 +33,13 @@ export function SuccessStep({
   allWorkouts,
 }: Props) {
   const router = useRouter();
-  const { partnership } = usePartnership();
-  const weekWindow = getWeekWindow(partnership) ?? getSoloWeekWindow();
+  const { partnership, weekTimezone } = usePartnership();
+  const weekWindow =
+    getWeekWindow(partnership, weekTimezone) ?? getSoloWeekWindow(weekTimezone);
   const userWeek = weekProgressFromWorkouts(
     allWorkouts,
     user,
+    weekTimezone,
     3,
     weekWindow.weekStart,
     weekWindow.weekEnd,

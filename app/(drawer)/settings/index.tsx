@@ -17,6 +17,7 @@ import { SettingsRow } from '@/components/settings/SettingsRow';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { TimezonePickerModal } from '@/components/settings/TimezonePickerModal';
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { usePartnership } from '@/lib/partnership';
 import { restorePurchases } from '@/lib/revenuecat';
 import { useSubscription } from '@/lib/subscription';
@@ -62,7 +63,7 @@ const DAY_NAMES = [
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { profile, user, signOut } = useAuth();
-  const { partnership, partner } = usePartnership();
+  const { partnership, partner, weekTimezone } = usePartnership();
   const { customerInfo, isPro, refresh: refreshSubscription } = useSubscription();
 
   const [editProfileOpen, setEditProfileOpen] = useState(false);
@@ -74,7 +75,7 @@ export default function SettingsScreen() {
   const initial = displayName.trim().charAt(0).toUpperCase() || '?';
   const provider = providerLabel(user?.app_metadata?.provider as string | undefined);
   const timezone = profile?.timezone ?? 'America/Los_Angeles';
-  const weekStartDay = getCurrentWeekStartDay(partnership);
+  const weekStartDay = getCurrentWeekStartDay(partnership, weekTimezone);
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
   const handleBack = () => {
@@ -147,7 +148,7 @@ export default function SettingsScreen() {
                 });
                 Alert.alert('Widget resync', result);
               } catch (err) {
-                const message = err instanceof Error ? err.message : String(err);
+                const message = toUserMessage(err);
                 Alert.alert('Widget resync failed', message);
               }
             }}
@@ -199,7 +200,7 @@ export default function SettingsScreen() {
               } catch (err) {
                 Alert.alert(
                   'Push test failed',
-                  err instanceof Error ? err.message : String(err),
+                  toUserMessage(err),
                 );
               }
             }}
@@ -265,7 +266,7 @@ export default function SettingsScreen() {
                 } catch (err) {
                   Alert.alert(
                     'Could not open',
-                    err instanceof Error ? err.message : String(err),
+                    toUserMessage(err),
                   );
                 }
               }}

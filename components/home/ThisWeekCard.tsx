@@ -5,7 +5,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/lib/auth';
 import { usePartnership } from '@/lib/partnership';
 import { colors, radii, spacing, typography } from '@/lib/theme';
-import type { WeekWindow } from '@/lib/week';
+import { DEFAULT_WEEK_START_DAY, type WeekWindow } from '@/lib/week';
+import { zonedDayOfWeek } from '@/lib/zonedTime';
 import type { WeekProgress, Workout } from '@/types/db';
 import { ExtendedDaysSheet } from './ExtendedDaysSheet';
 import { WeekDots } from './WeekDots';
@@ -51,9 +52,13 @@ export function ThisWeekCard({
   const solo = variant === 'solo';
   const [sheetOpen, setSheetOpen] = useState(false);
   const { profile, user } = useAuth();
-  const { partner } = usePartnership();
+  const { partner, weekTimezone } = usePartnership();
 
-  const weekStartDay = weekWindow ? weekWindow.weekStart.getDay() : 3;
+  // Falls back to the shared default rather than a bare `3` (Wednesday), which
+  // used to disagree with getSoloWeekWindow's own hardcoded default.
+  const weekStartDay = weekWindow
+    ? zonedDayOfWeek(weekWindow.startYmd)
+    : DEFAULT_WEEK_START_DAY;
   const extraDays = weekWindow ? Math.max(0, weekWindow.dayCount - 7) : 0;
   const daysLeftText = weekWindow ? daysLeftLabel(weekWindow.weekEnd) : null;
 
@@ -66,6 +71,7 @@ export function ThisWeekCard({
           avatar_url: null,
           created_at: '',
           timezone: null,
+          timezone_set_by_user: false,
           is_pro: false,
         }
       : null);
@@ -125,8 +131,9 @@ export function ThisWeekCard({
         <ExtendedDaysSheet
           visible={sheetOpen}
           onClose={() => setSheetOpen(false)}
-          weekStart={weekWindow.weekStart}
-          weekEnd={weekWindow.weekEnd}
+          startYmd={weekWindow.startYmd}
+          endYmd={weekWindow.endYmd}
+          tz={weekTimezone}
           workouts={workouts ?? []}
           user={profileForSheet}
           partner={partnerId ? partner : null}

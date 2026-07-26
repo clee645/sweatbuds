@@ -4,9 +4,9 @@ import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radii, spacing, typography } from '@/lib/theme';
+import { addZonedDays, diffZonedDays, zonedDayOfWeek, zonedMonthDay, zonedYmd } from '@/lib/zonedTime';
 import type { Profile, Workout } from '@/types/db';
 
-const MS_PER_DAY = 86_400_000;
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS_SHORT = [
   'Jan',
@@ -26,15 +26,16 @@ const MONTHS_SHORT = [
 type Props = {
   visible: boolean;
   onClose: () => void;
-  weekStart: Date;
-  weekEnd: Date;
+  startYmd: string;
+  endYmd: string;
+  tz: string;
   workouts: Workout[];
   user: Profile | null;
   partner: Profile | null;
 };
 
 type DayRow = {
-  date: Date;
+  ymd: string;
   isToday: boolean;
   isFuture: boolean;
   userLogged: boolean;
@@ -44,8 +45,9 @@ type DayRow = {
 export function ExtendedDaysSheet({
   visible,
   onClose,
-  weekStart,
-  weekEnd,
+  startYmd,
+  endYmd,
+  tz,
   workouts,
   user,
   partner,
@@ -54,45 +56,41 @@ export function ExtendedDaysSheet({
   const headerTopPad = Math.max(insets.top, spacing.md);
   const rows = useMemo<DayRow[]>(() => {
     if (!visible) return [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayMs = today.getTime();
+    const todayYmd = zonedYmd(new Date(), tz);
+    // Calendar-day count, so a DST transition inside the window can't drop or
+    // duplicate a row (the old ms-division did exactly that).
+    const dayCount = diffZonedDays(endYmd, startYmd);
 
-    const dayCount = Math.round((weekEnd.getTime() - weekStart.getTime()) / MS_PER_DAY);
-
-    const userDays = new Set<number>();
-    const partnerDays = new Set<number>();
+    const userDays = new Set<string>();
+    const partnerDays = new Set<string>();
     for (const w of workouts) {
-      const t = new Date(w.logged_at);
-      if (Number.isNaN(t.getTime())) continue;
-      const dayMs = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
-      if (user && w.user_id === user.id) userDays.add(dayMs);
-      else if (partner && w.user_id === partner.id) partnerDays.add(dayMs);
+      const ymd = zonedYmd(w.logged_at, tz);
+      if (!ymd) continue;
+      if (user && w.user_id === user.id) userDays.add(ymd);
+      else if (partner && w.user_id === partner.id) partnerDays.add(ymd);
     }
 
     const out: DayRow[] = [];
     for (let i = 0; i < dayCount; i++) {
-      const d = new Date(weekStart);
-      d.setDate(weekStart.getDate() + i);
-      const dMs = d.getTime();
+      const ymd = addZonedDays(startYmd, i);
+      const delta = diffZonedDays(ymd, todayYmd);
       out.push({
-        date: d,
-        isToday: dMs === todayMs,
-        isFuture: dMs > todayMs,
-        userLogged: userDays.has(dMs),
-        partnerLogged: partnerDays.has(dMs),
+        ymd,
+        isToday: delta === 0,
+        isFuture: delta > 0,
+        userLogged: userDays.has(ymd),
+        partnerLogged: partnerDays.has(ymd),
       });
     }
     return out;
-  }, [visible, weekStart, weekEnd, workouts, user, partner]);
+  }, [visible, startYmd, endYmd, tz, workouts, user, partner]);
 
   const header = useMemo(() => {
-    const lastDay = new Date(weekEnd);
-    lastDay.setDate(lastDay.getDate() - 1);
-    const a = `${MONTHS_SHORT[weekStart.getMonth()]} ${weekStart.getDate()}`;
-    const b = `${MONTHS_SHORT[lastDay.getMonth()]} ${lastDay.getDate()}`;
-    return `${a} – ${b}`;
-  }, [weekStart, weekEnd]);
+    const lastYmd = addZonedDays(endYmd, -1);
+    const s = zonedMonthDay(startYmd);
+    const e = zonedMonthDay(lastYmd);
+    return `${MONTHS_SHORT[s.month - 1]} ${s.day} – ${MONTHS_SHORT[e.month - 1]} ${e.day}`;
+  }, [startYmd, endYmd]);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -110,7 +108,7 @@ export function ExtendedDaysSheet({
 
         <FlatList
           data={rows}
-          keyExtractor={(item) => item.date.toISOString()}
+          keyExtractor={(item) => item.ymd}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => <DayRow row={item} user={user} partner={partner} />}
           ItemSeparatorComponent={() => <View style={styles.divider} />}
@@ -129,8 +127,9 @@ function DayRow({
   user: Profile | null;
   partner: Profile | null;
 }) {
-  const dayLabel = DAY_LABELS[row.date.getDay()];
-  const dateLabel = `${MONTHS_SHORT[row.date.getMonth()]} ${row.date.getDate()}`;
+  const dayLabel = DAY_LABELS[zonedDayOfWeek(row.ymd)];
+  const { month, day } = zonedMonthDay(row.ymd);
+  const dateLabel = `${MONTHS_SHORT[month - 1]} ${day}`;
 
   return (
     <View style={[styles.row, row.isToday && styles.rowToday]}>

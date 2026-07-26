@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Linking, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AlwaysAllowIllustration } from '@/components/location/AlwaysAllowIllustration';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
 type Props = {
@@ -20,27 +21,7 @@ export function DowngradeSheet({ visible }: Props) {
           <SafeAreaView edges={['bottom']}>
             <View style={styles.handle} />
 
-            <View style={styles.iosCard}>
-              <Text style={styles.iosLabel}>Allow Location Access</Text>
-              <View style={styles.iosOptions}>
-                <View style={styles.iosRow}>
-                  <Text style={styles.iosRowText}>Never</Text>
-                </View>
-                <View style={styles.iosDivider} />
-                <View style={styles.iosRow}>
-                  <Text style={styles.iosRowText}>Ask Next Time Or When I Share</Text>
-                </View>
-                <View style={styles.iosDivider} />
-                <View style={styles.iosRow}>
-                  <Text style={styles.iosRowText}>While Using the App</Text>
-                </View>
-                <View style={styles.iosDivider} />
-                <View style={styles.iosRow}>
-                  <Text style={styles.iosRowText}>Always</Text>
-                  <Ionicons name="checkmark" size={18} color="#0A84FF" />
-                </View>
-              </View>
-            </View>
+            <AlwaysAllowIllustration />
 
             <View style={styles.copy}>
               <Text style={styles.heading}>Select "Always"{'\n'}to get location reminders</Text>
@@ -86,39 +67,6 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: colors.cardElevated,
     marginBottom: spacing.lg,
-  },
-  iosCard: {
-    backgroundColor: '#EFEFF4',
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  iosLabel: {
-    fontSize: 13,
-    color: '#6E6E73',
-    textTransform: 'none',
-    paddingHorizontal: spacing.sm,
-  },
-  iosOptions: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: radii.sm,
-    overflow: 'hidden',
-  },
-  iosRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  iosRowText: {
-    color: '#000000',
-    fontSize: 15,
-  },
-  iosDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#C6C6C8',
-    marginLeft: spacing.md,
   },
   copy: {
     paddingHorizontal: spacing.md,
