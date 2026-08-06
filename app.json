@@ -110,7 +110,7 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Sweatbuds reminds you to log a workout when you arrive at a saved gym.",
           "locationWhenInUsePermission": "Sweatbuds shows nearby gyms when you add a location.",
-          "isIosBackgroundLocationEnabled": true
+          "isIosBackgroundLocationEnabled": false
         }
       ],
       [

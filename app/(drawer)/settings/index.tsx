@@ -136,23 +136,25 @@ export default function SettingsScreen() {
             title="How to add the widget"
             onPress={() => router.push('/settings/widget-help')}
           />
-          <SettingsRow
-            icon="refresh-outline"
-            title="Resync widget now"
-            onPress={async () => {
-              try {
-                const result = await debugForcePartnerSync({
-                  partner,
-                  partnership,
-                  weeklyTarget: partnership?.weekly_target ?? 3,
-                });
-                Alert.alert('Widget resync', result);
-              } catch (err) {
-                const message = toUserMessage(err);
-                Alert.alert('Widget resync failed', message);
-              }
-            }}
-          />
+          {__DEV__ ? (
+            <SettingsRow
+              icon="refresh-outline"
+              title="Resync widget now"
+              onPress={async () => {
+                try {
+                  const result = await debugForcePartnerSync({
+                    partner,
+                    partnership,
+                    weeklyTarget: partnership?.weekly_target ?? 3,
+                  });
+                  Alert.alert('Widget resync', result);
+                } catch (err) {
+                  const message = toUserMessage(err);
+                  Alert.alert('Widget resync failed', message);
+                }
+              }}
+            />
+          ) : null}
         </SettingsSection>
 
         <SettingsSection label="Notifications">
@@ -164,47 +166,49 @@ export default function SettingsScreen() {
             subtitle="Open iOS Settings → Sweatbuds → Notifications and enable Allow Notifications, Sounds, and Badges."
             onPress={() => void Linking.openSettings()}
           />
-          <SettingsRow
-            icon="paper-plane-outline"
-            title="Send test push"
-            subtitle="Verifies token + delivery"
-            onPress={async () => {
-              try {
-                if (!user) return;
-                const projectId = Constants.expoConfig?.extra?.eas?.projectId as
-                  | string
-                  | undefined;
-                const tokenRes = await Notifications.getExpoPushTokenAsync(
-                  projectId ? { projectId } : undefined,
-                );
-                const token = tokenRes.data;
-                const { count } = await supabase
-                  .from('device_tokens')
-                  .select('user_id', { count: 'exact', head: true })
-                  .eq('user_id', user.id);
-                const res = await fetch('https://exp.host/--/api/v2/push/send', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    to: token,
-                    title: 'Sweatbuds test',
-                    body: 'If you see this, push is working.',
-                    sound: 'default',
-                  }),
-                });
-                const json = await res.json();
-                Alert.alert(
-                  'Push diagnostic',
-                  `Token: …${token.slice(-10)}\nDB rows: ${count ?? '?'}\nResp: ${JSON.stringify(json).slice(0, 240)}`,
-                );
-              } catch (err) {
-                Alert.alert(
-                  'Push test failed',
-                  toUserMessage(err),
-                );
-              }
-            }}
-          />
+          {__DEV__ ? (
+            <SettingsRow
+              icon="paper-plane-outline"
+              title="Send test push"
+              subtitle="Verifies token + delivery"
+              onPress={async () => {
+                try {
+                  if (!user) return;
+                  const projectId = Constants.expoConfig?.extra?.eas?.projectId as
+                    | string
+                    | undefined;
+                  const tokenRes = await Notifications.getExpoPushTokenAsync(
+                    projectId ? { projectId } : undefined,
+                  );
+                  const token = tokenRes.data;
+                  const { count } = await supabase
+                    .from('device_tokens')
+                    .select('user_id', { count: 'exact', head: true })
+                    .eq('user_id', user.id);
+                  const res = await fetch('https://exp.host/--/api/v2/push/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      to: token,
+                      title: 'Sweatbuds test',
+                      body: 'If you see this, push is working.',
+                      sound: 'default',
+                    }),
+                  });
+                  const json = await res.json();
+                  Alert.alert(
+                    'Push diagnostic',
+                    `Token: …${token.slice(-10)}\nDB rows: ${count ?? '?'}\nResp: ${JSON.stringify(json).slice(0, 240)}`,
+                  );
+                } catch (err) {
+                  Alert.alert(
+                    'Push test failed',
+                    toUserMessage(err),
+                  );
+                }
+              }}
+            />
+          ) : null}
         </SettingsSection>
 
         <SettingsSection label="Account">

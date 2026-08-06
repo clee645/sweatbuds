@@ -82,6 +82,7 @@ export function CreateWagerSheet({
                 placeholder="e.g. massage, dessert, movie pick"
                 placeholderTextColor={colors.textDim}
                 style={styles.input}
+                maxLength={40}
                 selectionColor={colors.accent}
                 onFocus={() => setQtyOpen(false)}
                 returnKeyType="done"
