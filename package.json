@@ -58,7 +58,8 @@
     "sweatbuds-widget": "file:./modules/sweatbuds-widget"
   },
   "overrides": {
-    "expo-font": "~14.0.12"
+    "expo-font": "~14.0.12",
+    "react-dom": "19.1.0"
   },
   "devDependencies": {
     "@bacons/apple-targets": "^4.0.6",
