@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
-import { StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radii } from '@/lib/theme';
 
@@ -7,17 +8,28 @@ type Props = {
   letter: string; // 'M' | 'T' | 'W' | ...
   dayNumber: number;
   imageUri: string | null;
+  // Calendar date (YYYY-MM-DD, couple's zone) this cell represents. Tapping a
+  // photo cell opens the same immersive memory viewer as the monthly grid.
+  isoDate: string;
+  // A day later than today within the in-progress week. Dimmed so an upcoming
+  // day is distinguishable from one that was missed.
+  future?: boolean;
 };
 
 // Single cell in a WeekCard's seven-day strip. Renders the day-of-week letter
 // header above either a photo thumbnail (with the date overlaid) or a muted
 // date number.
-export function DayThumbnail({ letter, dayNumber, imageUri }: Props) {
+export function DayThumbnail({ letter, dayNumber, imageUri, isoDate, future }: Props) {
+  const router = useRouter();
+
   return (
-    <View style={styles.column}>
+    <View style={[styles.column, future && styles.future]}>
       <Text style={styles.letter}>{letter}</Text>
       {imageUri ? (
-        <View style={styles.tile}>
+        <Pressable
+          onPress={() => router.push(`/history/day/${isoDate}`)}
+          style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
+        >
           <Image
             source={{ uri: imageUri }}
             style={styles.image}
@@ -27,7 +39,7 @@ export function DayThumbnail({ letter, dayNumber, imageUri }: Props) {
           <View style={styles.numberOverlay} pointerEvents="none">
             <Text style={styles.numberOnImage}>{dayNumber}</Text>
           </View>
-        </View>
+        </Pressable>
       ) : (
         <View style={[styles.tile, styles.tileEmpty]}>
           <Text style={styles.numberMuted}>{dayNumber}</Text>
@@ -49,6 +61,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.6,
   },
+  future: { opacity: 0.35 },
+  pressed: { opacity: 0.7 },
   tile: {
     width: '100%',
     aspectRatio: 4 / 5,

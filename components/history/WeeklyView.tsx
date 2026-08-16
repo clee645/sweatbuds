@@ -15,6 +15,7 @@ import { usePartnership } from '@/lib/partnership';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import { getPartnershipWeekStart, partnershipWeekStreak } from '@/lib/week';
+import { zonedYmd } from '@/lib/zonedTime';
 import { useWorkouts } from '@/lib/workouts';
 import type { Workout } from '@/types/db';
 
@@ -38,16 +39,28 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
     [workouts, partnership, anchorHistory, weekTimezone],
   );
 
-  // The current week is in-progress and rendered separately on home; History
-  // shows only weeks before the partnership's current week.
+  // The current week is shown first, live and in-progress, so the week is
+  // visible from the day it starts rather than only once it closes. Everything
+  // before it lands under "Past Weeks".
   const currentWeekStartMs = useMemo(() => {
     const start = getPartnershipWeekStart(partnership, weekTimezone);
     return start ? start.getTime() : 0;
   }, [partnership, weekTimezone]);
+  const currentBucket = useMemo(() => {
+    // Guard on a real window: with no current week there is nothing to label
+    // "This Week", and the newest past bucket must not be promoted into it.
+    if (!currentWeekStartMs) return null;
+    // `buckets` is newest-first, so the first match is the current window.
+    return buckets.find((b) => b.weekStart.getTime() >= currentWeekStartMs) ?? null;
+  }, [buckets, currentWeekStartMs]);
   const pastBuckets = useMemo(
     () => buckets.filter((b) => b.weekStart.getTime() < currentWeekStartMs),
     [buckets, currentWeekStartMs],
   );
+
+  // Today in the couple's zone — lets the in-progress card tell "hasn't
+  // happened yet" apart from "missed".
+  const todayYmd = useMemo(() => zonedYmd(new Date(), weekTimezone), [weekTimezone]);
 
   const streak = useMemo(
     () =>
@@ -70,11 +83,18 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
   // Resolve signed URLs for every "earliest selfie per day" once. The storage
   // layer caches in-memory, so toggling between Weekly and Calendar views or
   // re-rendering doesn't refetch.
+  const displayBuckets = useMemo(
+    () => (currentBucket ? [currentBucket, ...pastBuckets] : pastBuckets),
+    [currentBucket, pastBuckets],
+  );
+
   const earliestSelfiePaths = useMemo(() => {
     const paths = new Set<string>();
-    for (const b of pastBuckets) {
-      for (let i = 0; i < 7; i++) {
-        const dayWorkouts = b.byDay[i as 0 | 1 | 2 | 3 | 4 | 5 | 6];
+    for (const b of displayBuckets) {
+      // Walk the bucket's real length — a transition week runs 8-13 days, and
+      // a fixed 7 would leave those extra days without a resolved thumbnail.
+      for (let i = 0; i < b.byDay.length; i++) {
+        const dayWorkouts = b.byDay[i];
         if (dayWorkouts.length === 0) continue;
         let earliest = dayWorkouts[0];
         let earliestMs = +new Date(earliest.logged_at);
@@ -89,7 +109,7 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
       }
     }
     return Array.from(paths);
-  }, [pastBuckets]);
+  }, [displayBuckets]);
 
   const [uriMap, setUriMap] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -106,26 +126,6 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
     };
   }, [earliestSelfiePaths]);
 
-  if (pastBuckets.length === 0) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.statsWrap}>
-          <StatCards streak={streak} total={total} />
-        </View>
-        <Text style={styles.sectionHeading}>Past Weeks</Text>
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIconWrap}>
-            <Ionicons name="time-outline" size={48} color={colors.textDim} />
-          </View>
-          <Text style={styles.emptyTitle}>No past weeks yet</Text>
-          <Text style={styles.emptyBody}>
-            Complete your first week to see your history here
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <FlatList
       style={styles.list}
@@ -137,6 +137,20 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
           <View style={styles.statsWrap}>
             <StatCards streak={streak} total={total} />
           </View>
+          {currentBucket ? (
+            <View style={styles.currentWrap}>
+              <Text style={styles.sectionHeading}>This Week</Text>
+              <BucketRow
+                bucket={currentBucket}
+                userId={userId}
+                partnerId={partnerId}
+                target={target}
+                tz={weekTimezone}
+                uriMap={uriMap}
+                todayYmd={todayYmd}
+              />
+            </View>
+          ) : null}
           <Text style={styles.sectionHeading}>Past Weeks</Text>
         </>
       }
@@ -151,6 +165,17 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
         />
       )}
       ItemSeparatorComponent={() => <View style={styles.separator} />}
+      ListEmptyComponent={
+        <View style={styles.emptyCard}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="time-outline" size={48} color={colors.textDim} />
+          </View>
+          <Text style={styles.emptyTitle}>No past weeks yet</Text>
+          <Text style={styles.emptyBody}>
+            Complete your first week to see your history here
+          </Text>
+        </View>
+      }
       showsVerticalScrollIndicator={false}
     />
   );
@@ -163,6 +188,7 @@ function BucketRow({
   target,
   tz,
   uriMap,
+  todayYmd,
 }: {
   bucket: WeekBucket;
   userId: string | null;
@@ -170,6 +196,8 @@ function BucketRow({
   target: number;
   tz: string;
   uriMap: Record<string, string>;
+  // Set only for the in-progress week. See WeekCard's prop docs.
+  todayYmd?: string;
 }) {
   const { a } = distinctDaysPerUser(bucket.workouts, userId, partnerId, tz);
   const goalHit = partnershipWeekGoalHit(bucket.workouts, userId, partnerId, target, tz);
@@ -180,14 +208,12 @@ function BucketRow({
       userDays={a}
       weeklyTarget={target}
       uriMap={uriMap}
+      todayYmd={todayYmd}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   list: {
     flex: 1,
   },
@@ -195,6 +221,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   statsWrap: {
+    marginBottom: spacing.xl,
+  },
+  currentWrap: {
     marginBottom: spacing.xl,
   },
   sectionHeading: {

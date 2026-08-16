@@ -2,7 +2,12 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { DayThumbnail } from '@/components/history/DayThumbnail';
 import { formatWeekRange, type WeekBucket } from '@/lib/historyWeek';
-import { addZonedDays, zonedDayOfWeek, zonedMonthDay } from '@/lib/zonedTime';
+import {
+  addZonedDays,
+  diffZonedDays,
+  zonedDayOfWeek,
+  zonedMonthDay,
+} from '@/lib/zonedTime';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import type { Workout } from '@/types/db';
 
@@ -19,11 +24,24 @@ type Props = {
   // Map of selfie storage path -> signed URL, pre-resolved by the parent so
   // every WeekCard reads from one shared cache.
   uriMap: Record<string, string>;
+  // Today's date (YYYY-MM-DD, couple's zone), set ONLY for the week currently
+  // in progress. Its presence marks the card as live: the summary reports
+  // progress instead of a verdict, and days after today are de-emphasized so
+  // "hasn't happened yet" doesn't read as "missed".
+  todayYmd?: string;
 };
 
-export function WeekCard({ bucket, goalHit, userDays, weeklyTarget, uriMap }: Props) {
+export function WeekCard({
+  bucket,
+  goalHit,
+  userDays,
+  weeklyTarget,
+  uriMap,
+  todayYmd,
+}: Props) {
   const range = formatWeekRange(bucket.startYmd, bucket.endYmd);
   const displayDays = Math.min(userDays, weeklyTarget);
+  const inProgress = Boolean(todayYmd);
 
   return (
     <View style={styles.card}>
@@ -31,13 +49,17 @@ export function WeekCard({ bucket, goalHit, userDays, weeklyTarget, uriMap }: Pr
         <View style={styles.titleCol}>
           <Text style={styles.range}>{range}</Text>
           <Text style={styles.subtitle}>
-            {displayDays} of {weeklyTarget} goal hit
+            {displayDays} of {weeklyTarget} {inProgress ? 'days logged' : 'goal hit'}
           </Text>
         </View>
         {goalHit ? (
           <View style={styles.goalHitPill}>
             <Text style={styles.goalHitText}>GOAL HIT</Text>
             <Text style={styles.goalHitFire}>🔥</Text>
+          </View>
+        ) : inProgress ? (
+          <View style={styles.inProgressPill}>
+            <Text style={styles.inProgressText}>IN PROGRESS</Text>
           </View>
         ) : null}
       </View>
@@ -57,6 +79,8 @@ export function WeekCard({ bucket, goalHit, userDays, weeklyTarget, uriMap }: Pr
                   letter={letter}
                   dayNumber={zonedMonthDay(dayYmd).day}
                   imageUri={uri}
+                  isoDate={dayYmd}
+                  future={todayYmd ? diffZonedDays(dayYmd, todayYmd) > 0 : false}
                 />
               );
             })}
@@ -141,6 +165,18 @@ const styles = StyleSheet.create({
   },
   goalHitFire: {
     fontSize: 12,
+  },
+  inProgressPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    backgroundColor: colors.pillBg,
+  },
+  inProgressText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   daysCol: {
     gap: spacing.sm,
