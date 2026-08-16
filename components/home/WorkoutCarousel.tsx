@@ -129,6 +129,14 @@ export function WorkoutCarousel({ workouts, archiving = false }: Props) {
   });
 
   const floatIndex = useSharedValue(0);
+  // The authoritative index, on the UI thread. React state lands a frame or
+  // more after a gesture ends, so the pan handler cannot read `activeIndex`
+  // and still be correct during a fast burst of swipes.
+  const committedIndex = useSharedValue(0);
+  // Where floatIndex sat when the current drag began. Capturing it lets a drag
+  // that interrupts a still-settling animation continue from what's on screen
+  // instead of snapping back to the last committed card.
+  const dragStart = useSharedValue(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -163,41 +171,64 @@ export function WorkoutCarousel({ workouts, archiving = false }: Props) {
     }
   }, [workouts.length, activeIndex]);
 
-  // Keep floatIndex in lockstep with activeIndex on external state changes
-  // (initial mount, workouts mutation). After a swipe, floatIndex is already
-  // at the new activeIndex when this effect runs, so the assignment is a no-op.
+  // Re-sync only when something OUTSIDE the gesture moved the index (initial
+  // mount, workouts mutation, the clamp above). A swipe sets committedIndex
+  // before it hands the value to React, so this is a no-op on that path —
+  // which matters, because assigning floatIndex here would cut the settle
+  // animation short the instant activeIndex updates.
   useEffect(() => {
-    floatIndex.value = activeIndex;
-  }, [activeIndex, floatIndex]);
+    if (Math.round(committedIndex.value) !== activeIndex) {
+      committedIndex.value = activeIndex;
+      floatIndex.value = activeIndex;
+    }
+  }, [activeIndex, committedIndex, floatIndex]);
 
   const openDetail = () => {
     const w = workouts[activeIndex];
     if (w) router.push(`/photo/${w.id}`);
   };
 
+  const lastIndex = workouts.length - 1;
+
   const swipeGesture = Gesture.Pan()
-    .onChange((e) => {
-      floatIndex.value = activeIndex - e.translationX / SCREEN_WIDTH;
+    // Let a stationary press fall through to the tap gesture instead of
+    // winning the Exclusive race as a zero-distance pan.
+    .activeOffsetX([-8, 8])
+    .onBegin(() => {
+      dragStart.value = floatIndex.value;
+    })
+    .onUpdate((e) => {
+      floatIndex.value = dragStart.value - e.translationX / SCREEN_WIDTH;
     })
     .onEnd((e) => {
       const passedThreshold =
         Math.abs(e.translationX) > SWIPE_THRESHOLD ||
         Math.abs(e.velocityX) > SWIPE_VELOCITY;
-      const timingConfig = { duration: 500, easing: Easing.out(Easing.cubic) };
 
-      if (e.translationX < 0 && passedThreshold && activeIndex < workouts.length - 1) {
-        const next = activeIndex + 1;
-        floatIndex.value = withTiming(next, timingConfig, (finished) => {
-          if (finished) runOnJS(setActiveIndex)(next);
-        });
-      } else if (e.translationX > 0 && passedThreshold && activeIndex > 0) {
-        const prev = activeIndex - 1;
-        floatIndex.value = withTiming(prev, timingConfig, (finished) => {
-          if (finished) runOnJS(setActiveIndex)(prev);
-        });
-      } else {
-        floatIndex.value = withSpring(activeIndex, { damping: 22, stiffness: 100 });
-      }
+      // Step from the last COMMITTED index rather than the on-screen position.
+      // A flick that lands mid-animation is still a whole card's worth of
+      // intent, so a burst of fast swipes advances one card each instead of
+      // rounding back to where the animation happened to be.
+      let target = passedThreshold
+        ? committedIndex.value + (e.translationX < 0 ? 1 : -1)
+        : Math.round(floatIndex.value);
+      target = Math.min(Math.max(target, 0), lastIndex);
+
+      committedIndex.value = target;
+      floatIndex.value = withSpring(target, {
+        // Carry the fling's momentum so a hard swipe settles faster than a
+        // lazy one, instead of every swipe taking a fixed 500ms.
+        velocity: -e.velocityX / SCREEN_WIDTH,
+        damping: 20,
+        stiffness: 220,
+        mass: 0.5,
+        overshootClamping: true,
+      });
+      // Hand the index to React NOW, not in the animation's completion
+      // callback. The dots and the mounted-card window used to wait out the
+      // entire animation before updating — that wait is what made rapid
+      // swiping feel like it was blocking on the indicator.
+      runOnJS(setActiveIndex)(target);
     });
 
   const tapGesture = Gesture.Tap()

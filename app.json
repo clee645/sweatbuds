@@ -20,11 +20,6 @@
       "fallbackToCacheTimeout": 0,
       "checkAutomatically": "ON_LOAD"
     },
-    "splash": {
-      "image": "./assets/ghost-mascot.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#000000"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sweatbuds.app",
@@ -78,6 +73,15 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/ghost-mascot.png",
+          "imageWidth": 132,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ],
       "expo-apple-authentication",
       "@bacons/apple-targets",
       "./plugins/withModularHeaders",
