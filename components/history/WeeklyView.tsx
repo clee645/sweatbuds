@@ -138,7 +138,12 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
             <StatCards streak={streak} total={total} />
           </View>
           {currentBucket ? (
-            <View style={styles.currentWrap}>
+            <View
+              style={[
+                styles.currentWrap,
+                pastBuckets.length === 0 && styles.currentWrapLast,
+              ]}
+            >
               <Text style={styles.sectionHeading}>This Week</Text>
               <BucketRow
                 bucket={currentBucket}
@@ -151,7 +156,9 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
               />
             </View>
           ) : null}
-          <Text style={styles.sectionHeading}>Past Weeks</Text>
+          {pastBuckets.length > 0 ? (
+            <Text style={styles.sectionHeading}>Past Weeks</Text>
+          ) : null}
         </>
       }
       renderItem={({ item }) => (
@@ -165,16 +172,21 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
         />
       )}
       ItemSeparatorComponent={() => <View style={styles.separator} />}
+      // Only a safety net for the degenerate case where there is no week to
+      // show at all. Once the in-progress week renders, a "no history yet"
+      // placeholder beneath it would contradict the card above it.
       ListEmptyComponent={
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIconWrap}>
-            <Ionicons name="time-outline" size={48} color={colors.textDim} />
+        currentBucket ? null : (
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIconWrap}>
+              <Ionicons name="time-outline" size={48} color={colors.textDim} />
+            </View>
+            <Text style={styles.emptyTitle}>No weeks yet</Text>
+            <Text style={styles.emptyBody}>
+              Log your first workout to start building your history
+            </Text>
           </View>
-          <Text style={styles.emptyTitle}>No past weeks yet</Text>
-          <Text style={styles.emptyBody}>
-            Complete your first week to see your history here
-          </Text>
-        </View>
+        )
       }
       showsVerticalScrollIndicator={false}
     />
@@ -225,6 +237,10 @@ const styles = StyleSheet.create({
   },
   currentWrap: {
     marginBottom: spacing.xl,
+  },
+  // No "Past Weeks" section below, so drop the gap that would separate them.
+  currentWrapLast: {
+    marginBottom: 0,
   },
   sectionHeading: {
     ...typography.title,
