@@ -73,6 +73,22 @@ export async function getCustomerInfo(): Promise<CustomerInfo | null> {
   }
 }
 
+// The SDK caches CustomerInfo locally for several minutes, and it has no way to
+// know about a change made behind its back — specifically the promotional
+// entitlement that redeem-promo-code grants over RevenueCat's REST API. Without
+// dropping the cache first, the getCustomerInfo() right after a redemption
+// returns the pre-grant snapshot, the access gate reads "not Pro", and the user
+// sits on the locked home until a cold start. Call this before re-fetching
+// whenever the server may have changed entitlements underneath us.
+export async function invalidateCustomerInfoCache(): Promise<void> {
+  if (!configured) return;
+  try {
+    await Purchases.invalidateCustomerInfoCache();
+  } catch (err) {
+    if (__DEV__) console.warn('[RevenueCat] invalidateCustomerInfoCache failed', err);
+  }
+}
+
 export type PurchaseOutcome =
   | { kind: 'success'; customerInfo: CustomerInfo }
   | { kind: 'cancelled' }

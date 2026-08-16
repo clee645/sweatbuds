@@ -8,6 +8,10 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -44,7 +48,8 @@
         "UIBackgroundModes": [
           "fetch",
           "remote-notification"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -110,7 +115,7 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Sweatbuds reminds you to log a workout when you arrive at a saved gym.",
           "locationWhenInUsePermission": "Sweatbuds shows nearby gyms when you add a location.",
-          "isIosBackgroundLocationEnabled": false
+          "isIosBackgroundLocationEnabled": true
         }
       ],
       [

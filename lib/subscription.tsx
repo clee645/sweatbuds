@@ -19,6 +19,7 @@ import {
   getCurrentOffering,
   getCustomerInfo,
   hasProEntitlement,
+  invalidateCustomerInfoCache,
   isRevenueCatConfigured,
 } from './revenuecat';
 import { supabase } from './supabase';
@@ -28,7 +29,11 @@ type SubscriptionContextValue = {
   offering: PurchasesOffering | null;
   isPro: boolean;
   loading: boolean;
-  refresh: () => Promise<void>;
+  // Pass { force: true } after a server-side entitlement change (a promo
+  // redemption) so the SDK's local cache is dropped first. Returns the fetched
+  // CustomerInfo so callers can act on it immediately — context state won't
+  // have re-rendered yet by the time this resolves.
+  refresh: (options?: { force?: boolean }) => Promise<CustomerInfo | null>;
 };
 
 const SubscriptionContext = createContext<SubscriptionContextValue | undefined>(undefined);
@@ -56,21 +61,27 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   // we sync once per resolved state rather than on every customerInfo tick.
   const lastSyncedRef = useRef<boolean | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { force?: boolean }) => {
     if (!isRevenueCatConfigured()) {
       setLoading(false);
-      return;
+      return null;
     }
     try {
+      // Drop the SDK's cached CustomerInfo first when the server may have
+      // changed entitlements out of band — otherwise this fetch returns the
+      // pre-change snapshot and the gate stays locked until a cold start.
+      if (options?.force) await invalidateCustomerInfoCache();
       const [info, current] = await Promise.all([getCustomerInfo(), getCurrentOffering()]);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) return info;
       setCustomerInfo(info);
       setOffering(current);
+      return info;
     } catch (err) {
       // Both helpers swallow their own errors, so this is belt-and-suspenders.
       // The provider MUST settle regardless: `loading` gates useAccessGate,
       // which renders BrandedSplash — never leave it stuck true.
       if (__DEV__) console.warn('[subscription] refresh failed', err);
+      return null;
     } finally {
       if (mountedRef.current) setLoading(false);
     }

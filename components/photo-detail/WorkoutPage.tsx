@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Dimensions, FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { CommentRow } from '@/components/photo-detail/CommentRow';
-import { WorkoutCard } from '@/components/home/WorkoutCard';
+import { WorkoutCard, type PhotoPrimary } from '@/components/home/WorkoutCard';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import type { Profile, Workout, WorkoutComment } from '@/types/db';
 
@@ -16,6 +16,8 @@ type Props = {
   cardWidth: number;
   cardHeight: number;
   compactCaption: boolean;
+  primary?: PhotoPrimary;
+  onSwap?: () => void;
 };
 
 export function WorkoutPage({
@@ -26,6 +28,8 @@ export function WorkoutPage({
   cardWidth,
   cardHeight,
   compactCaption,
+  primary,
+  onSwap,
 }: Props) {
   const commentsRef = useRef<FlatList<WorkoutComment>>(null);
   const lastCountRef = useRef(comments.length);
@@ -53,6 +57,8 @@ export function WorkoutPage({
           }
           caption={null}
           envSize={compactCaption ? 'compact' : 'large'}
+          primary={primary}
+          onSwap={onSwap}
         />
       </View>
       {workout.caption && !compactCaption ? (

@@ -103,7 +103,7 @@ export function DrawerContent(props: DrawerContentComponentProps) {
         <View style={styles.group}>
           <DrawerItem
             icon="barbell-outline"
-            label="Weekly Rules"
+            label="Weekly Wager"
             onPress={() => navigate('/weekly-rules')}
           />
           <DrawerItem
@@ -161,13 +161,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     gap: spacing.md,
   },
+  // Tall enough for the bordered partner circle (48) rather than the bare 44 of
+  // the owner's, so the ring has somewhere to go instead of overflowing.
   avatarStack: {
     width: 56,
-    height: 44,
+    height: 48,
     position: 'relative',
+    justifyContent: 'center',
   },
   avatarStackPaired: {
-    width: 74,
+    width: 78,
   },
   avatar: {
     width: 44,
@@ -175,10 +178,18 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: colors.card,
   },
+  // React Native draws borders INSIDE the box, so reusing the 44px avatar size
+  // here left the partner's photo rendering at 40px against the owner's 44px —
+  // and since borderColor is the drawer background, the missing 4px read as a
+  // squashed picture rather than a ring. Size the box up by the border width so
+  // the separator is added around the photo instead of taken out of it.
   partnerAvatar: {
     position: 'absolute',
     left: 30,
     top: 0,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 2,
     borderColor: colors.bg,
   },
@@ -196,9 +207,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 30,
     top: 0,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    // Matches partnerAvatar — it occupies the same slot, so it has to carry the
+    // same border-inclusive size or the two states jump when a partner joins.
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: colors.cardElevated,
     alignItems: 'center',
     justifyContent: 'center',

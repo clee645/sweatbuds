@@ -30,7 +30,14 @@ export function GeofenceSync() {
       if ((await getPermissionLevel()) !== 'always') return;
       const saved = await fetchSavedLocations(userId);
       await primeNameCache(saved);
-      await syncGeofences(saved);
+      // Only close the latch on a real registration. A failure here is silent
+      // by nature — there's no UI on this component — so leaving it open means
+      // the next foreground pass tries again rather than assuming we're armed.
+      const result = await syncGeofences(saved);
+      if (!result.ok) {
+        console.warn('[geofence] launch sync failed', result.reason, result.error);
+        return;
+      }
       syncedForUserRef.current = userId;
     } catch (e) {
       console.warn('[geofence] launch sync failed', e);

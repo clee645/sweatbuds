@@ -20,6 +20,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ActionMenu } from '@/components/photo-detail/ActionMenu';
 import { CommentComposer } from '@/components/photo-detail/CommentComposer';
 import { WorkoutPage } from '@/components/photo-detail/WorkoutPage';
+import type { PhotoPrimary } from '@/components/home/WorkoutCard';
 import { useAuth } from '@/lib/auth';
 import { useWorkoutComments } from '@/lib/comments';
 import { toUserMessage } from '@/lib/errors';
@@ -72,6 +73,15 @@ export default function DayMemoryScreen() {
   const [uriMap, setUriMap] = useState<Record<string, string>>({});
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const listRef = useRef<FlatList<Workout>>(null);
+
+  // Mirrors photo/[id]: which photo is shown large, per workout, screen-local.
+  const [primaryById, setPrimaryById] = useState<Record<string, PhotoPrimary>>({});
+  const primaryFor = (wid: string): PhotoPrimary => primaryById[wid] ?? 'selfie';
+  const togglePrimary = (wid: string) =>
+    setPrimaryById((m) => ({
+      ...m,
+      [wid]: (m[wid] ?? 'selfie') === 'selfie' ? 'environment' : 'selfie',
+    }));
 
   useEffect(() => {
     let cancelled = false;
@@ -143,16 +153,21 @@ export default function DayMemoryScreen() {
   const handleShare = () => {
     if (!active) return;
     setMenuOpen(false);
-    router.push(`/share-sweatcam/${active.id}`);
+    router.push(`/share-sweatcam/${active.id}?primary=${primaryFor(active.id)}`);
   };
 
   const handleSave = async () => {
     if (!active) return;
     setMenuOpen(false);
-    const selfieUri = uriMap[active.selfie_path];
-    if (!selfieUri) return;
+    // Save whichever photo is currently shown large.
+    const path =
+      primaryFor(active.id) === 'environment' && active.environment_path
+        ? active.environment_path
+        : active.selfie_path;
+    const uri = uriMap[path];
+    if (!uri) return;
     const { saveToPhotos } = await import('@/lib/share');
-    const ok = await saveToPhotos(selfieUri);
+    const ok = await saveToPhotos(uri);
     if (ok) Alert.alert('Saved', 'Sweatcam saved to your photo library.');
   };
 
@@ -252,6 +267,8 @@ export default function DayMemoryScreen() {
               cardWidth={cardWidth}
               cardHeight={cardHeight}
               compactCaption={isKeyboardOpen}
+              primary={primaryFor(item.id)}
+              onSwap={() => togglePrimary(item.id)}
             />
           )}
         />

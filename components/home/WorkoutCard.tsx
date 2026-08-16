@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, radii, spacing } from '@/lib/theme';
+
+export type PhotoPrimary = 'selfie' | 'environment';
 
 type Props = {
   selfieUri: string;
@@ -12,6 +14,8 @@ type Props = {
   envSize?: 'default' | 'large' | 'compact';
   showCommentIcon?: boolean;
   unreadCount?: number;
+  primary?: PhotoPrimary;
+  onSwap?: () => void;
 };
 
 export function WorkoutCard({
@@ -22,31 +26,48 @@ export function WorkoutCard({
   envSize = 'default',
   showCommentIcon = false,
   unreadCount = 0,
+  primary = 'selfie',
+  onSwap,
 }: Props) {
+  // Fall back to selfie-as-main whenever there's no environment shot — plenty of
+  // workouts have a null environment_path.
+  const swapped = primary === 'environment' && Boolean(environmentUri);
+  const mainUri = swapped ? environmentUri! : selfieUri;
+  const insetUri = swapped ? selfieUri : environmentUri;
+  const canSwap = Boolean(environmentUri && onSwap);
+
   return (
     <View style={[styles.card, style]}>
       <Image
-        source={{ uri: selfieUri }}
-        style={styles.selfie}
+        source={{ uri: mainUri }}
+        style={styles.main}
         contentFit="cover"
         cachePolicy="memory-disk"
       />
 
-      {environmentUri ? (
-        <View
-          style={[
+      {insetUri ? (
+        <Pressable
+          onPress={onSwap}
+          disabled={!canSwap}
+          // Without a swap handler this must be as touch-transparent as the
+          // plain View it replaced — the home carousel wraps the card in a
+          // GestureDetector whose tap opens the detail screen.
+          pointerEvents={canSwap ? 'auto' : 'none'}
+          hitSlop={6}
+          style={({ pressed }) => [
             styles.envWrap,
             envSize === 'large' && styles.envWrapLarge,
             envSize === 'compact' && styles.envWrapCompact,
+            pressed && canSwap && styles.envPressed,
           ]}
         >
           <Image
-            source={{ uri: environmentUri }}
+            source={{ uri: insetUri }}
             style={styles.env}
             contentFit="cover"
             cachePolicy="memory-disk"
           />
-        </View>
+        </Pressable>
       ) : null}
 
       {showCommentIcon ? (
@@ -84,7 +105,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     position: 'relative',
   },
-  selfie: { width: '100%', height: '100%' },
+  main: { width: '100%', height: '100%' },
   envWrap: {
     position: 'absolute',
     top: spacing.sm,
@@ -114,6 +135,7 @@ const styles = StyleSheet.create({
     left: spacing.sm,
     borderWidth: 0.5,
   },
+  envPressed: { opacity: 0.85 },
   env: { width: '100%', height: '100%' },
   commentBadge: {
     position: 'absolute',

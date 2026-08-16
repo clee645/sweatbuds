@@ -371,7 +371,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       }
       throw lastError instanceof Error
         ? lastError
-        : new Error('Could not save rules. Try again.');
+        : new Error('Could not save changes. Try again.');
     },
     [userId, partnership],
   );

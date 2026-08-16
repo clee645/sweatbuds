@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
-import { formatCode, isCompleteCode, normalizeCode } from '@/lib/invite';
+import { checkInviteCode, formatCode, isCompleteCode, normalizeCode } from '@/lib/invite';
 import { setPendingInviteCode } from '@/lib/onboarding';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -15,19 +15,39 @@ import { colors, radii, spacing, typography } from '@/lib/theme';
 export default function InviteCodeScreen() {
   const router = useRouter();
   const [code, setCode] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const complete = isCompleteCode(code);
 
   const handleChange = (raw: string) => {
     setCode(formatCode(normalizeCode(raw)));
+    if (error) setError(null);
   };
 
   const handleConnect = async () => {
-    if (!complete) return;
-    // Stash the code; PendingInvitePairer redeems it after sign-in. Collect the
-    // invitee's own name/photo first (flow=join), then create their account.
-    await setPendingInviteCode(normalizeCode(code));
-    router.push('/onboarding/name?flow=join');
+    if (!complete || checking) return;
+    setError(null);
+    setChecking(true);
+    try {
+      // Verify the code BEFORE sending them through name → photo → sign-up.
+      // Skipping this check meant a typo'd or already-claimed code only failed
+      // after the account existed, stranding the user signed in, unpaired, and
+      // on a paywall their partner's subscription already covers. The check
+      // fails open, so a flaky connection still lets them continue.
+      const result = await checkInviteCode(code);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      // Stash the code; PendingInvitePairer redeems it after sign-in. Collect
+      // the invitee's own name/photo first (flow=join), then create their
+      // account.
+      await setPendingInviteCode(normalizeCode(code));
+      router.push('/onboarding/name?flow=join');
+    } finally {
+      setChecking(false);
+    }
   };
 
   return (
@@ -55,10 +75,12 @@ export default function InviteCodeScreen() {
           />
         </View>
 
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
         <OnboardingButton
-          label="Connect with partner"
+          label={checking ? 'Checking…' : 'Connect with partner'}
           variant="accent"
-          disabled={!complete}
+          disabled={!complete || checking}
           onPress={handleConnect}
         />
       </View>
@@ -103,5 +125,13 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textAlign: 'center',
     padding: 0,
+  },
+  error: {
+    ...typography.caption,
+    color: colors.danger,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: -spacing.sm,
   },
 });

@@ -54,7 +54,7 @@ export default function WeeklyRulesScreen() {
           <View style={styles.titleBlock}>
             <View style={styles.titleRow}>
               <Text style={styles.sparkle}>✦</Text>
-              <Text style={styles.title}>WEEKLY RULES</Text>
+              <Text style={styles.title}>WEEKLY WAGER</Text>
               <Text style={styles.sparkle}>✦</Text>
             </View>
             <Text style={styles.subtitle}>Work out at least</Text>

@@ -26,7 +26,7 @@ import { useWorkouts } from '@/lib/workouts';
 
 export default function ShareSweatcamScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, primary } = useLocalSearchParams<{ id: string; primary?: string }>();
   const { workouts } = useWorkouts();
   const workout = workouts.find((w) => w.id === id);
 
@@ -58,7 +58,12 @@ export default function ShareSweatcamScreen() {
   const environmentUri = workout.environment_path
     ? uriMap[workout.environment_path]
     : null;
-  const ready = Boolean(selfieUri);
+  // The caller passes whichever photo it was showing large, so the exported
+  // card matches what the user was looking at.
+  const swapped = primary === 'environment' && Boolean(environmentUri);
+  const mainUri = swapped ? environmentUri : selfieUri;
+  const insetUri = swapped ? selfieUri : environmentUri;
+  const ready = Boolean(mainUri);
 
   const runShare = async (
     fn: (fileUri: string) => Promise<void>,
@@ -94,9 +99,9 @@ export default function ShareSweatcamScreen() {
 
       <View style={styles.cardWrap}>
         <View ref={cardRef} collapsable={false} style={styles.card}>
-          {selfieUri ? (
+          {mainUri ? (
             <Image
-              source={{ uri: selfieUri }}
+              source={{ uri: mainUri }}
               style={styles.selfie}
               contentFit="cover"
               transition={150}
@@ -105,10 +110,10 @@ export default function ShareSweatcamScreen() {
             <View style={styles.selfie} />
           )}
 
-          {environmentUri ? (
+          {insetUri ? (
             <View style={styles.envWrap}>
               <Image
-                source={{ uri: environmentUri }}
+                source={{ uri: insetUri }}
                 style={styles.env}
                 contentFit="cover"
                 transition={150}
@@ -125,9 +130,9 @@ export default function ShareSweatcamScreen() {
         <Text style={styles.caption} numberOfLines={2}>
           {workout.caption ?? ' '}
         </Text>
-        <View style={styles.sweatmatesRow}>
+        <View style={styles.sweatbudsRow}>
           <Ionicons name="heart-outline" size={14} color={colors.textMuted} />
-          <Text style={styles.sweatmatesText}>Sweatmates</Text>
+          <Text style={styles.sweatbudsText}>Sweatbuds</Text>
         </View>
       </View>
 
@@ -245,12 +250,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.lg,
   },
-  sweatmatesRow: {
+  sweatbudsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  sweatmatesText: {
+  sweatbudsText: {
     ...typography.caption,
     color: colors.textMuted,
   },

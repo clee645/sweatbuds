@@ -186,9 +186,19 @@ export default function PaywallScreen() {
         return;
       }
       if (outcome.kind === 'granted') {
-        // A lifetime/time-limited entitlement was applied server-side. Re-pull
-        // customer info so the gate sees Pro, then continue to success.
-        await refresh();
+        // A lifetime/time-limited entitlement was applied server-side, which the
+        // SDK's local CustomerInfo cache knows nothing about — force past it or
+        // we read the pre-grant snapshot and strand the user on LockedHome until
+        // they cold-start the app.
+        const info = await refresh({ force: true });
+        // Only claim success once the entitlement is actually visible. Advancing
+        // unconditionally is what made a failed grant look like a working one.
+        if (!hasProEntitlement(info)) {
+          setPromoError(
+            "Your code was applied but hasn't synced yet. Fully close the app and reopen it.",
+          );
+          return;
+        }
         await finishPaywall();
         return;
       }

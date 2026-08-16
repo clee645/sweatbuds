@@ -65,7 +65,7 @@ export function EditRulesModal({ visible, initialDays, initialWager, onClose }: 
       onClose();
     } catch (e) {
       const message = toUserMessage(e, 'Try again.');
-      Alert.alert('Could not save rules', message);
+      Alert.alert('Could not save changes', message);
     } finally {
       setSaving(false);
     }
@@ -84,7 +84,7 @@ export function EditRulesModal({ visible, initialDays, initialWager, onClose }: 
           <View style={styles.handle} />
 
           <View style={styles.headerRow}>
-            <Text style={styles.title}>Edit Rules</Text>
+            <Text style={styles.title}>Edit Weekly Wager</Text>
             <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8}>
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </Pressable>

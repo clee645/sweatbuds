@@ -24,13 +24,17 @@
 // Deploy:  supabase functions deploy redeem-promo-code --no-verify-jwt
 //   (--no-verify-jwt so the function can also serve a not-yet-authenticated
 //   caller; abuse is bounded by the code itself + the per-RC-user uniqueness.)
-// Secrets: REVENUECAT_SECRET_KEY (shared with sync-subscription)
+// Secrets: REVENUECAT_SECRET_KEY (shared with sync-subscription).
+//   SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are injected
+//   automatically. The anon key is used only to resolve the caller's identity
+//   from their Authorization header (see resolveUserId).
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const REVENUECAT_SECRET_KEY = Deno.env.get('REVENUECAT_SECRET_KEY') ?? '';
 
 const corsHeaders = {
@@ -61,6 +65,35 @@ function json(status: number, body: Record<string, unknown>) {
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
+
+// Best-effort caller identity for promo_redemptions.user_id.
+//
+// supabase-js attaches the current session's Authorization header to
+// functions.invoke(), so the normal signed-in redeemer hands us their user id
+// for free — we just never read it before, which left user_id null on every row
+// and its index dead.
+//
+// Deliberately OPTIONAL and non-fatal. This function is deployed
+// --no-verify-jwt so it can also serve a caller who isn't authenticated yet,
+// and supabase-js sends the anon key as the bearer token when there's no
+// session — which resolves to no user. Neither case should block a redemption
+// that is otherwise valid, so every failure path returns null and we record the
+// redemption against rc_app_user_id alone, exactly as before.
+async function resolveUserId(req: Request): Promise<string | null> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader || !ANON_KEY) return null;
+  try {
+    const userClient = createClient(SUPABASE_URL, ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data, error } = await userClient.auth.getUser();
+    if (error || !data.user) return null;
+    return data.user.id;
+  } catch {
+    return null;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -172,8 +205,13 @@ serve(async (req) => {
     return json(500, { error: 'unsupported grant_type' });
   }
 
+  // Resolved here rather than up top so a rejected code (invalid, expired, capped)
+  // doesn't pay for an auth round-trip it will never use.
+  const userId = await resolveUserId(req);
+
   const { error: insertErr } = await supabase.from('promo_redemptions').insert({
     promo_code_id: promo.id,
+    user_id: userId,
     rc_app_user_id: rcAppUserId,
     grant_type: promo.grant_type,
   });

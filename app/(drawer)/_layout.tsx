@@ -54,7 +54,7 @@ export default function DrawerLayout() {
       }}
     >
       <Drawer.Screen name="index" options={{ title: 'Home' }} />
-      <Drawer.Screen name="weekly-rules" options={{ title: 'Weekly Rules' }} />
+      <Drawer.Screen name="weekly-rules" options={{ title: 'Weekly Wager' }} />
       <Drawer.Screen name="wager-balance" options={{ title: 'Wager Balance' }} />
       <Drawer.Screen name="partner" options={{ title: 'Partner' }} />
       <Drawer.Screen name="history" options={{ title: 'History' }} />

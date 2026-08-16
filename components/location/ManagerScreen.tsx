@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -39,15 +39,6 @@ import type { SavedLocation } from '@/types/db';
 
 const NEARBY_DEFAULT_QUERY = 'gym';
 
-// syncGeofences hands the region list to CoreLocation and can reject — a
-// misconfigured Info.plist, or permission revoked between renders. These calls
-// are fire-and-forget (the saved list on screen is already correct; only
-// background registration failed), so swallow it rather than letting it surface
-// as an uncaught promise rejection redbox.
-function pushGeofences(list: SavedLocation[]): void {
-  void syncGeofences(list).catch((e) => console.warn('[geofence] sync failed', e));
-}
-
 export function ManagerScreen() {
   const { user } = useAuth();
   const {
@@ -67,6 +58,7 @@ export function ManagerScreen() {
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const [userCoord, setUserCoord] = useState<{ latitude: number; longitude: number } | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [geofenceFailed, setGeofenceFailed] = useState(false);
 
   const searchInputRef = useRef<TextInput>(null);
   const searcher = useRef<DebouncedMapKitSearch | null>(null);
@@ -74,6 +66,18 @@ export function ManagerScreen() {
   if (!searcher.current) {
     searcher.current = new DebouncedMapKitSearch();
   }
+
+  // syncGeofences hands the region list to CoreLocation and can fail — a
+  // misconfigured Info.plist, or permission revoked between renders. The saved
+  // list on screen is still correct, so this stays fire-and-forget rather than
+  // blocking the add; but the outcome drives a banner, because a saved gym
+  // that was never registered looks exactly like one that was.
+  const pushGeofences = useCallback((list: SavedLocation[]) => {
+    void syncGeofences(list).then((result) => {
+      setGeofenceFailed(!result.ok);
+      if (!result.ok) console.warn('[geofence] sync failed', result.reason, result.error);
+    });
+  }, []);
 
   // Load saved locations and bias the search around the user's coordinate.
   useEffect(() => {
@@ -254,6 +258,23 @@ export function ManagerScreen() {
             <Text style={styles.notifyWarningAction}>
               {notificationLevel === 'denied' ? 'Open Settings' : 'Turn on'}
             </Text>
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {/* Registration failed, so nothing is being watched — even though the
+          saved list below renders normally. Offer the retry rather than a dead
+          end, since the common causes (a permission flip, a transient
+          CoreLocation error) can clear on a second attempt. */}
+      {geofenceFailed ? (
+        <Pressable
+          onPress={() => pushGeofences(saved)}
+          style={({ pressed }) => [styles.notifyWarning, pressed && styles.pressed]}
+        >
+          <Ionicons name="warning-outline" size={16} color={colors.warning} />
+          <Text style={styles.notifyWarningText}>
+            We couldn't set up arrival reminders, so we can't nudge you at these spots.{' '}
+            <Text style={styles.notifyWarningAction}>Try again</Text>
           </Text>
         </Pressable>
       ) : null}

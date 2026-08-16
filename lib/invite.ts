@@ -66,6 +66,42 @@ export async function sharePartnerInvite(userId: string): Promise<void> {
   await Share.share({ message });
 }
 
+export type InviteCodeCheck = { ok: true } | { ok: false; message: string };
+
+// Pre-flight check for the onboarding code screen, run before the user has an
+// account. Advisory only: an `ok` here can still lose the race to another
+// redeemer, so pairWithCode's errors remain the real gate.
+//
+// Deliberately FAILS OPEN. If the check can't complete — offline, or the
+// migration isn't deployed yet — there's nothing trustworthy to report, and
+// blocking someone at the code screen is worse than the behaviour this
+// replaces. The code gets stashed either way and PendingInvitePairer retries
+// the redemption after sign-in. Only an explicit negative from the server stops
+// the user here.
+export async function checkInviteCode(rawCode: string): Promise<InviteCodeCheck> {
+  const code = normalizeCode(rawCode);
+  if (!isCompleteCode(code)) {
+    return { ok: false, message: 'Enter a complete 6-character code.' };
+  }
+
+  const { data, error } = await supabase.rpc('check_invite_code', { code });
+  if (error) return { ok: true };
+
+  if (data === 'self') {
+    return {
+      ok: false,
+      message: "That's your own code — send it to your partner instead.",
+    };
+  }
+  if (data === 'not_found') {
+    return {
+      ok: false,
+      message: 'That code was not found or has already been used. Double-check it with your partner.',
+    };
+  }
+  return { ok: true };
+}
+
 // Redemption goes through a SECURITY DEFINER RPC because the partnerships
 // SELECT/UPDATE RLS policies require the caller to already be a member —
 // which the joining user isn't yet. The function does the lookup, validation,
