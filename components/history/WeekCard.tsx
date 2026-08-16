@@ -79,6 +79,7 @@ export function WeekCard({
                   letter={letter}
                   dayNumber={zonedMonthDay(dayYmd).day}
                   imageUri={uri}
+                  imagePath={earliest?.selfie_path ?? null}
                   isoDate={dayYmd}
                   future={todayYmd ? diffZonedDays(dayYmd, todayYmd) > 0 : false}
                 />

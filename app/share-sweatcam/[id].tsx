@@ -63,6 +63,12 @@ export default function ShareSweatcamScreen() {
   const swapped = primary === 'environment' && Boolean(environmentUri);
   const mainUri = swapped ? environmentUri : selfieUri;
   const insetUri = swapped ? selfieUri : environmentUri;
+  // Storage paths pair with the URIs above so each image keeps a stable
+  // expo-image cache key across launches. See lib/storage.ts.
+  const selfiePath = workout.selfie_path;
+  const environmentPath = workout.environment_path ?? null;
+  const mainPath = swapped ? environmentPath : selfiePath;
+  const insetPath = swapped ? selfiePath : environmentPath;
   const ready = Boolean(mainUri);
 
   const runShare = async (
@@ -101,7 +107,7 @@ export default function ShareSweatcamScreen() {
         <View ref={cardRef} collapsable={false} style={styles.card}>
           {mainUri ? (
             <Image
-              source={{ uri: mainUri }}
+              source={{ uri: mainUri, cacheKey: mainPath ?? mainUri }}
               style={styles.selfie}
               contentFit="cover"
               transition={150}
@@ -113,7 +119,7 @@ export default function ShareSweatcamScreen() {
           {insetUri ? (
             <View style={styles.envWrap}>
               <Image
-                source={{ uri: insetUri }}
+                source={{ uri: insetUri, cacheKey: insetPath ?? insetUri }}
                 style={styles.env}
                 contentFit="cover"
                 transition={150}

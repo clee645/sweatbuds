@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import type { ImageSource } from 'expo-image';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 import { supabase } from './supabase';
@@ -51,6 +52,21 @@ export function getCachedSignedUrls(paths: string[]): Record<string, string> {
     if (cached) result[p] = cached;
   }
   return result;
+}
+
+// Build an <Image> source that caches on the storage path rather than the URL.
+//
+// A signed URL embeds a JWT whose iat/exp change on every signing, so the URL
+// string is different on every cold start (the cache above is in-memory only)
+// and again after each TTL rollover. expo-image keys its disk cache on the URI,
+// so without an explicit cacheKey `cachePolicy="memory-disk"` never hits across
+// launches and every photo re-downloads. The storage path is the stable
+// identity of the bytes; the token is not.
+export function workoutImageSource(
+  path: string,
+  uriMap: Record<string, string>,
+): ImageSource {
+  return { uri: uriMap[path] ?? path, cacheKey: path };
 }
 
 export async function getSignedUrls(paths: string[]): Promise<Record<string, string>> {

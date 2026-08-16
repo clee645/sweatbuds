@@ -36,6 +36,7 @@ type Cell = {
   dayNumber: number | null;
   isoDate: string | null;
   imageUri: string | null;
+  imagePath: string | null;
 };
 
 export function MonthGrid({ year, month, byDay, uriMap }: Props) {
@@ -69,6 +70,7 @@ export function MonthGrid({ year, month, byDay, uriMap }: Props) {
                 dayNumber={cell.dayNumber}
                 isoDate={cell.isoDate}
                 imageUri={cell.imageUri}
+                imagePath={cell.imagePath}
               />
             ))}
           </View>
@@ -92,7 +94,7 @@ function buildCells(
 
   const cells: Cell[] = [];
   for (let i = 0; i < leading; i++) {
-    cells.push({ dayNumber: null, isoDate: null, imageUri: null });
+    cells.push({ dayNumber: null, isoDate: null, imageUri: null, imagePath: null });
   }
   for (let day = 1; day <= daysInMonth; day++) {
     // Built from calendar parts directly — this is a grid cell, not an
@@ -100,16 +102,18 @@ function buildCells(
     const iso = `${year}-${pad(month + 1)}-${pad(day)}`;
     const dayWorkouts = byDay[iso];
     let imageUri: string | null = null;
+    let imagePath: string | null = null;
     if (dayWorkouts && dayWorkouts.length > 0) {
       // bucketWorkoutsByDay sorts each bucket ASC, so [0] is the earliest.
       const earliest = dayWorkouts[0];
       imageUri = uriMap[earliest.selfie_path] ?? null;
+      imagePath = earliest.selfie_path;
     }
-    cells.push({ dayNumber: day, isoDate: iso, imageUri });
+    cells.push({ dayNumber: day, isoDate: iso, imageUri, imagePath });
   }
   // Pad to a full week so the last row stays aligned with the grid above.
   while (cells.length % 7 !== 0) {
-    cells.push({ dayNumber: null, isoDate: null, imageUri: null });
+    cells.push({ dayNumber: null, isoDate: null, imageUri: null, imagePath: null });
   }
   return cells;
 }

@@ -8,6 +8,9 @@ type Props = {
   letter: string; // 'M' | 'T' | 'W' | ...
   dayNumber: number;
   imageUri: string | null;
+  // Storage path behind `imageUri`, used as the stable expo-image cache key —
+  // the signed URL's token changes every launch. See lib/storage.ts.
+  imagePath: string | null;
   // Calendar date (YYYY-MM-DD, couple's zone) this cell represents. Tapping a
   // photo cell opens the same immersive memory viewer as the monthly grid.
   isoDate: string;
@@ -19,7 +22,14 @@ type Props = {
 // Single cell in a WeekCard's seven-day strip. Renders the day-of-week letter
 // header above either a photo thumbnail (with the date overlaid) or a muted
 // date number.
-export function DayThumbnail({ letter, dayNumber, imageUri, isoDate, future }: Props) {
+export function DayThumbnail({
+  letter,
+  dayNumber,
+  imageUri,
+  imagePath,
+  isoDate,
+  future,
+}: Props) {
   const router = useRouter();
 
   return (
@@ -31,7 +41,7 @@ export function DayThumbnail({ letter, dayNumber, imageUri, isoDate, future }: P
           style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
         >
           <Image
-            source={{ uri: imageUri }}
+            source={{ uri: imageUri, cacheKey: imagePath ?? imageUri }}
             style={styles.image}
             contentFit="cover"
             cachePolicy="memory-disk"

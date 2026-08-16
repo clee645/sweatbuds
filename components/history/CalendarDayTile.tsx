@@ -9,11 +9,14 @@ type Props = {
   dayNumber: number | null;
   isoDate: string | null;
   imageUri: string | null;
+  // Storage path behind `imageUri`, used as the stable expo-image cache key —
+  // the signed URL's token changes every launch. See lib/storage.ts.
+  imagePath: string | null;
 };
 
 // One cell in the BeReal-style monthly grid. Tapping a tile that has
 // workouts opens the immersive memory viewer for that date.
-export function CalendarDayTile({ dayNumber, isoDate, imageUri }: Props) {
+export function CalendarDayTile({ dayNumber, isoDate, imageUri, imagePath }: Props) {
   const router = useRouter();
 
   if (dayNumber === null) {
@@ -33,7 +36,7 @@ export function CalendarDayTile({ dayNumber, isoDate, imageUri }: Props) {
       >
         <View style={styles.tile}>
           <Image
-            source={{ uri: imageUri }}
+            source={{ uri: imageUri, cacheKey: imagePath ?? imageUri }}
             style={styles.image}
             contentFit="cover"
             cachePolicy="memory-disk"

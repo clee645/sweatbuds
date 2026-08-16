@@ -3,6 +3,7 @@ import { Dimensions, FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { CommentRow } from '@/components/photo-detail/CommentRow';
 import { WorkoutCard, type PhotoPrimary } from '@/components/home/WorkoutCard';
+import { workoutImageSource } from '@/lib/storage';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import type { Profile, Workout, WorkoutComment } from '@/types/db';
 
@@ -49,10 +50,10 @@ export function WorkoutPage({
     <View style={styles.page}>
       <View style={[styles.cardFrame, { width: cardWidth, height: cardHeight }]}>
         <WorkoutCard
-          selfieUri={uriMap[workout.selfie_path] ?? workout.selfie_path}
-          environmentUri={
+          selfie={workoutImageSource(workout.selfie_path, uriMap)}
+          environment={
             workout.environment_path
-              ? (uriMap[workout.environment_path] ?? workout.environment_path)
+              ? workoutImageSource(workout.environment_path, uriMap)
               : null
           }
           caption={null}

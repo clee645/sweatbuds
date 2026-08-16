@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
+import { Image, type ImageSource } from 'expo-image';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, radii, spacing } from '@/lib/theme';
@@ -7,8 +7,10 @@ import { colors, radii, spacing } from '@/lib/theme';
 export type PhotoPrimary = 'selfie' | 'environment';
 
 type Props = {
-  selfieUri: string;
-  environmentUri?: string | null;
+  // Sources rather than bare URIs so each image carries its stable cacheKey.
+  // See `workoutImageSource` in lib/storage.ts.
+  selfie: ImageSource;
+  environment?: ImageSource | null;
   caption?: string | null;
   style?: StyleProp<ViewStyle>;
   envSize?: 'default' | 'large' | 'compact';
@@ -19,8 +21,8 @@ type Props = {
 };
 
 export function WorkoutCard({
-  selfieUri,
-  environmentUri,
+  selfie,
+  environment,
   caption,
   style,
   envSize = 'default',
@@ -31,21 +33,21 @@ export function WorkoutCard({
 }: Props) {
   // Fall back to selfie-as-main whenever there's no environment shot — plenty of
   // workouts have a null environment_path.
-  const swapped = primary === 'environment' && Boolean(environmentUri);
-  const mainUri = swapped ? environmentUri! : selfieUri;
-  const insetUri = swapped ? selfieUri : environmentUri;
-  const canSwap = Boolean(environmentUri && onSwap);
+  const swapped = primary === 'environment' && Boolean(environment);
+  const mainSource = swapped ? environment! : selfie;
+  const insetSource = swapped ? selfie : environment;
+  const canSwap = Boolean(environment && onSwap);
 
   return (
     <View style={[styles.card, style]}>
       <Image
-        source={{ uri: mainUri }}
+        source={mainSource}
         style={styles.main}
         contentFit="cover"
         cachePolicy="memory-disk"
       />
 
-      {insetUri ? (
+      {insetSource ? (
         <Pressable
           onPress={onSwap}
           disabled={!canSwap}
@@ -62,7 +64,7 @@ export function WorkoutCard({
           ]}
         >
           <Image
-            source={{ uri: insetUri }}
+            source={insetSource}
             style={styles.env}
             contentFit="cover"
             cachePolicy="memory-disk"

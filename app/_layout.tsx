@@ -30,6 +30,7 @@ import { HistoryProvider } from '@/lib/history';
 import { PartnershipProvider, usePartnership } from '@/lib/partnership';
 import { SubscriptionProvider } from '@/lib/subscription';
 import { colors } from '@/lib/theme';
+import { useHeroWarmup } from '@/lib/useHeroWarmup';
 import { WorkoutsProvider } from '@/lib/workouts';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -92,12 +93,15 @@ export default function RootLayout() {
 
 function AuthGate() {
   const { loading } = useAuth();
+  // Hold the branded splash a beat longer (capped) while the home carousel's
+  // photos warm, so home arrives painted instead of buffering them in.
+  const heroWarm = useHeroWarmup();
 
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  if (loading) {
+  if (loading || !heroWarm) {
     return <BrandedSplash />;
   }
 

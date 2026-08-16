@@ -16,7 +16,7 @@ import Animated, {
 import { useAuth } from '@/lib/auth';
 import { useWorkoutComments } from '@/lib/comments';
 import { useCommentViews } from '@/lib/commentViews';
-import { getCachedSignedUrls, getSignedUrls } from '@/lib/storage';
+import { getCachedSignedUrls, getSignedUrls, workoutImageSource } from '@/lib/storage';
 import { colors, spacing, typography } from '@/lib/theme';
 import { timeAgo } from '@/lib/time';
 import type { Workout } from '@/types/db';
@@ -240,10 +240,10 @@ export function WorkoutCarousel({ workouts, archiving = false }: Props) {
 
   const renderCard = (workout: Workout) => (
     <WorkoutCard
-      selfieUri={uriMap[workout.selfie_path] ?? workout.selfie_path}
-      environmentUri={
+      selfie={workoutImageSource(workout.selfie_path, uriMap)}
+      environment={
         workout.environment_path
-          ? (uriMap[workout.environment_path] ?? workout.environment_path)
+          ? workoutImageSource(workout.environment_path, uriMap)
           : null
       }
       caption={workout.caption}
