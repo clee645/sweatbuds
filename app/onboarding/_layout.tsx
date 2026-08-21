@@ -32,6 +32,12 @@ export default function OnboardingLayout() {
       <Stack.Screen name="paywall-reminder" />
       <Stack.Screen name="paywall" />
       <Stack.Screen name="paywall-success" options={{ animation: 'fade' }} />
+      <Stack.Screen name="widget-intro" options={{ animation: 'fade' }} />
+      <Stack.Screen name="widget-step-1" />
+      <Stack.Screen name="widget-step-2" />
+      <Stack.Screen name="widget-step-3" />
+      <Stack.Screen name="widget-step-4" />
+      <Stack.Screen name="widget-done" options={{ animation: 'fade' }} />
     </Stack>
   );
 }

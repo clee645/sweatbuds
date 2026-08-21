@@ -9,8 +9,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ConfettiBurst } from '@/components/onboarding/ConfettiBurst';
 import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
-import { setPaywallSeen } from '@/lib/onboarding';
+import { getWidgetSetupSeen, setPaywallSeen } from '@/lib/onboarding';
 import { colors, spacing, typography } from '@/lib/theme';
+import { isWidgetAvailable } from '@/lib/widget';
 
 // Paywall flow, screen 4 — the celebration shown after the user "subscribes".
 export default function PaywallSuccessScreen() {
@@ -22,6 +23,12 @@ export default function PaywallSuccessScreen() {
 
   const finish = async () => {
     await setPaywallSeen();
+    // New subscribers get walked through adding the home-screen widget. Android
+    // has no widget, and a build without the native module can't show one either.
+    if (isWidgetAvailable && !(await getWidgetSetupSeen())) {
+      router.replace('/onboarding/widget-intro');
+      return;
+    }
     router.replace('/');
   };
 

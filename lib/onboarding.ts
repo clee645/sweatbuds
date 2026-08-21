@@ -78,6 +78,39 @@ export async function clearPaywallSeen(): Promise<void> {
   }
 }
 
+// Post-purchase widget walkthrough flag: once the user has clicked (or skipped)
+// through the widget setup screens, we never auto-show them again. The widget
+// itself can't be probed — this records that we showed the walkthrough, not that
+// the widget was actually added.
+const WIDGET_SETUP_SEEN_KEY = 'sweatbuds:widgetSetupSeen';
+
+export async function getWidgetSetupSeen(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(WIDGET_SETUP_SEEN_KEY)) === 'true';
+  } catch {
+    // Storage unavailable — treat as seen so we don't trap the user in the
+    // walkthrough on every launch.
+    return true;
+  }
+}
+
+export async function setWidgetSetupSeen(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(WIDGET_SETUP_SEEN_KEY, 'true');
+  } catch {
+    // Best-effort; a failed write just means the walkthrough may show again.
+  }
+}
+
+// Cleared on account deletion so a re-signup with the same identity starts fresh.
+export async function clearWidgetSetupSeen(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(WIDGET_SETUP_SEEN_KEY);
+  } catch {
+    // Best-effort.
+  }
+}
+
 // Invite code entered during onboarding (before the user is signed in).
 // Pairing needs a Supabase session, so the code is stashed here and redeemed
 // by PendingInvitePairer once the user authenticates.

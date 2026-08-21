@@ -11,7 +11,11 @@ import {
 
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
-import { clearOnboardingSeen, clearPaywallSeen } from '@/lib/onboarding';
+import {
+  clearOnboardingSeen,
+  clearPaywallSeen,
+  clearWidgetSetupSeen,
+} from '@/lib/onboarding';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -52,6 +56,7 @@ export function DeleteAccountModal({ visible, onClose }: Props) {
       // fresh (a normal sign-out keeps these, by design).
       await clearOnboardingSeen();
       await clearPaywallSeen();
+      await clearWidgetSetupSeen();
       await signOut();
     } catch (e) {
       const message = toUserMessage(e);
