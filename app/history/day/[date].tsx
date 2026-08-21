@@ -203,13 +203,8 @@ export default function DayMemoryScreen() {
     try {
       await addComment({ workoutId: active.id, content });
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'object' && err !== null && 'message' in err
-            ? String((err as { message: unknown }).message)
-            : 'Please try again.';
-      Alert.alert('Could not post comment', message);
+      Alert.alert('Could not post comment', toUserMessage(err));
+      // Rethrown so the composer knows the send failed and keeps the draft.
       throw err;
     }
   };

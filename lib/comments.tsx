@@ -180,12 +180,15 @@ export function WorkoutCommentsProvider({ children }: { children: ReactNode }) {
           [workoutId]: (prev[workoutId] ?? []).filter((c) => c.id !== tempId),
         }));
         // Supabase PostgrestError isn't `instanceof Error` — wrap it so the
-        // caller's `err.message` access surfaces the underlying reason.
+        // caller's `err.message` access surfaces the underlying reason. Carry
+        // only `message`: `details`/`hint` are diagnostic-only (on a transport
+        // failure supabase-js puts the raw JS stack in `details`, build paths
+        // and all) and must never reach an Alert. The original hangs off
+        // `cause` for anyone debugging.
         if (error) {
-          const detail = [error.message, error.details, error.hint]
-            .filter(Boolean)
-            .join(' — ');
-          const wrapped = new Error(detail || 'Failed to post comment');
+          const wrapped = new Error(error.message || 'Failed to post comment', {
+            cause: error,
+          });
           (wrapped as Error & { code?: string }).code = error.code;
           throw wrapped;
         }
@@ -216,7 +219,14 @@ export function WorkoutCommentsProvider({ children }: { children: ReactNode }) {
       .from('workout_comments')
       .delete()
       .eq('id', commentId);
-    if (error) throw error;
+    // Same wrap as `add()` — a bare PostgrestError isn't `instanceof Error`.
+    if (error) {
+      const wrapped = new Error(error.message || 'Failed to delete comment', {
+        cause: error,
+      });
+      (wrapped as Error & { code?: string }).code = error.code;
+      throw wrapped;
+    }
     setByWorkout((prev) => {
       const out: Record<string, WorkoutComment[]> = {};
       for (const [wid, list] of Object.entries(prev)) {
