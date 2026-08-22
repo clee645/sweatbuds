@@ -23,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GoogleLogo } from '@/components/GoogleLogo';
 import { NoAccountError, useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
 import { colors, radii, spacing, typography } from '@/lib/theme';
@@ -98,16 +99,19 @@ export default function SignInScreen() {
             disabled={submitting !== null}
             style={({ pressed }) => [
               styles.authBtn,
+              styles.appleBtn,
               pressed && styles.pressed,
               submitting !== null && styles.disabled,
             ]}
           >
             {submitting === 'apple' ? (
-              <ActivityIndicator color="#1F1F1F" />
+              <ActivityIndicator color="#111111" />
             ) : (
               <>
-                <Ionicons name="logo-apple" size={20} color="#1F1F1F" />
-                <Text style={styles.authLabel}>Continue with Apple</Text>
+                <Ionicons name="logo-apple" size={20} color="#111111" />
+                <Text style={[styles.authLabel, styles.appleLabel]}>
+                  Continue with Apple
+                </Text>
               </>
             )}
           </Pressable>
@@ -118,16 +122,19 @@ export default function SignInScreen() {
           disabled={submitting !== null}
           style={({ pressed }) => [
             styles.authBtn,
+            styles.googleBtn,
             pressed && styles.pressed,
             submitting !== null && styles.disabled,
           ]}
         >
           {submitting === 'google' ? (
-            <ActivityIndicator color="#1F1F1F" />
+            <ActivityIndicator color={colors.text} />
           ) : (
             <>
-              <Ionicons name="logo-google" size={20} color="#1F1F1F" />
-              <Text style={styles.authLabel}>Continue with Google</Text>
+              <GoogleLogo size={20} />
+              <Text style={[styles.authLabel, styles.googleLabel]}>
+                Continue with Google
+              </Text>
             </>
           )}
         </Pressable>
@@ -280,17 +287,29 @@ const styles = StyleSheet.create({
   },
   authBtn: {
     height: 54,
-    borderRadius: radii.pill,
-    backgroundColor: '#FFFFFF',
+    borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.md,
+  },
+  appleBtn: {
+    backgroundColor: '#F4F1EA',
+  },
+  googleBtn: {
+    backgroundColor: colors.cardElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   authLabel: {
-    color: '#1F1F1F',
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
+  },
+  appleLabel: {
+    color: '#111111',
+  },
+  googleLabel: {
+    color: colors.text,
   },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.6 },
