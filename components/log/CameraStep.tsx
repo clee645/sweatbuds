@@ -18,8 +18,9 @@ import {
   StyleSheet,
   Text,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toUserMessage } from '@/lib/errors';
 import { colors, radii, spacing, typography } from '@/lib/theme';
@@ -76,6 +77,19 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
   const cameraReadyResolveRef = useRef<(() => void) | null>(null);
   const cameraReadyRef = useRef<boolean>(false);
   const prevActiveRef = useRef<boolean>(active);
+  // Insets come from the root provider rather than a native SafeAreaView.
+  // A SafeAreaView measures its own position, and on the first modal open it
+  // measured mid slide-in and applied no insets — so the camera looked
+  // different on the first open vs. every later one.
+  const insets = useSafeAreaInsets();
+  const safeInsetStyle = { paddingTop: insets.top, paddingBottom: insets.bottom };
+  const [frameWidth, setFrameWidth] = useState(CAMERA_WIDTH);
+
+  // Shrink the frame on short screens so it never slides under the controls.
+  const handleCameraWrapLayout = useCallback((e: LayoutChangeEvent) => {
+    const fit = Math.floor(Math.min(CAMERA_WIDTH, (e.nativeEvent.layout.height * 2) / 3));
+    setFrameWidth((w) => (w === fit ? w : fit));
+  }, []);
 
   // Stable promise that resolves when CameraView reports ready for the
   // currently mounted facing direction.
@@ -237,7 +251,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={[styles.safe, safeInsetStyle]}>
         <View style={styles.permissionWrap}>
           <Text style={styles.permissionTitle}>Camera access needed</Text>
           <Text style={styles.permissionBody}>
@@ -258,7 +272,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
             <Text style={styles.permissionCancel}>Cancel</Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -271,7 +285,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
         : '';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <View style={[styles.safe, safeInsetStyle]}>
       <View style={styles.headerRow}>
         <Pressable
           onPress={closeFlow}
@@ -296,8 +310,8 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
         )}
       </View>
 
-      <View style={styles.cameraWrap}>
-        <View style={styles.cameraFrame}>
+      <View style={styles.cameraWrap} onLayout={handleCameraWrapLayout}>
+        <View style={[styles.cameraFrame, { width: frameWidth }]}>
           <CameraView
             key={facing}
             ref={cameraRef}
@@ -362,7 +376,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
           />
         </Pressable>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -373,7 +387,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xxxl * 2 + spacing.md,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.xs,
   },
   headerBtn: {
@@ -396,7 +410,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   cameraFrame: {
-    width: CAMERA_WIDTH,
     aspectRatio: 2 / 3,
     borderRadius: radii.xl,
     overflow: 'hidden',
@@ -424,7 +437,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.danger,
     textAlign: 'center',
-    width: CAMERA_WIDTH,
+    width: '100%',
     paddingTop: spacing.md,
   },
   controlsRow: {
@@ -433,7 +446,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.xxxl,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xxxl * 2 + spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.md,
   },
   sideBtn: {
     width: 60,
