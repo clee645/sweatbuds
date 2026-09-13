@@ -7,6 +7,7 @@ import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
 import { checkInviteCode, formatCode, isCompleteCode, normalizeCode } from '@/lib/invite';
 import { setPendingInviteCode } from '@/lib/onboarding';
+import { posthog } from '@/lib/posthog';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
 // Onboarding setup screen — entered from stay-strong's "My partner sent me a
@@ -44,6 +45,9 @@ export default function InviteCodeScreen() {
       // the invitee's own name/photo first (flow=join), then create their
       // account.
       await setPendingInviteCode(normalizeCode(code));
+      posthog?.capture('invite_code_validated', {
+        source: 'onboarding',
+      });
       router.push('/onboarding/name?flow=join');
     } finally {
       setChecking(false);

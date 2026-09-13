@@ -16,6 +16,7 @@ import {
 } from 'react';
 
 import { registerPushToken, unregisterPushToken } from './notifications';
+import { captureException, posthog } from './posthog';
 import {
   configureRevenueCat,
   identifyRevenueCatUser,
@@ -140,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       return;
     }
+    posthog?.identify(userId);
     supabase
       .from('profiles')
       .select(PROFILE_COLUMNS)
@@ -208,12 +210,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .update({ onboarding_completed: true })
           .eq('id', data.user.id);
       }
+      if (data.user) {
+        posthog?.identify(data.user.id);
+        if (opts?.requireExisting) {
+          posthog?.capture('user_signed_in', { provider: 'google' });
+        }
+      }
     } catch (e) {
       if (
         isErrorWithCode(e) &&
         (e.code === statusCodes.SIGN_IN_CANCELLED || e.code === statusCodes.IN_PROGRESS)
       ) {
         return;
+      }
+      if (!(e instanceof NoAccountError)) {
+        captureException(e, { operation: 'user_sign_in', provider: 'google' });
       }
       throw e;
     }
@@ -246,6 +257,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .update({ onboarding_completed: true })
           .eq('id', data.user.id);
       }
+      if (data.user) {
+        posthog?.identify(data.user.id);
+        if (opts?.requireExisting) {
+          posthog?.capture('user_signed_in', { provider: 'apple' });
+        }
+      }
     } catch (e) {
       // User dismissed the Apple sheet — not an error worth surfacing.
       if (
@@ -255,6 +272,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (e as { code?: string }).code === 'ERR_REQUEST_CANCELED'
       ) {
         return;
+      }
+      if (!(e instanceof NoAccountError)) {
+        captureException(e, { operation: 'user_sign_in', provider: 'apple' });
       }
       throw e;
     }
@@ -273,6 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await clearWidget();
     await resetRevenueCatUser();
     await supabase.auth.signOut();
+    posthog?.reset();
   }, [session?.user?.id]);
 
   const value = useMemo<AuthContextValue>(

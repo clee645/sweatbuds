@@ -12,6 +12,7 @@ import {
 import { useAuth } from './auth';
 import { toUserMessage } from './errors';
 import { usePartnership } from './partnership';
+import { posthog } from './posthog';
 import { deleteWorkoutImages, uploadWorkoutImage } from './storage';
 import { supabase } from './supabase';
 import { deviceTimezone } from './zonedTime';
@@ -93,6 +94,9 @@ export async function deleteWorkout(workout: Workout): Promise<void> {
     (p): p is string => Boolean(p),
   );
   await deleteWorkoutImages(paths);
+  posthog?.capture('workout_deleted', {
+    had_caption: Boolean(workout.caption),
+  });
 }
 
 type WorkoutsContextValue = {

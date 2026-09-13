@@ -1,9 +1,10 @@
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as Updates from 'expo-updates';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AppState, View } from 'react-native';
+import { PostHogProvider } from 'posthog-react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -28,6 +29,7 @@ import { ConnectivityProvider } from '@/lib/connectivity';
 import { CommentViewsProvider } from '@/lib/commentViews';
 import { HistoryProvider } from '@/lib/history';
 import { PartnershipProvider, usePartnership } from '@/lib/partnership';
+import { posthog } from '@/lib/posthog';
 import { SubscriptionProvider } from '@/lib/subscription';
 import { colors } from '@/lib/theme';
 import { useHeroWarmup } from '@/lib/useHeroWarmup';
@@ -50,11 +52,12 @@ export default function RootLayout() {
     })();
   }, []);
 
-  return (
+  const app = (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <SafeAreaProvider>
         <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <StatusBar style="light" />
+          <PostHogScreenTracker />
           {/* Outermost so every provider below can consult connectivity when
               deciding whether a failed fetch means "no data" or "no network". */}
           <ConnectivityProvider>
@@ -89,6 +92,34 @@ export default function RootLayout() {
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
+
+  // autocapture's captureScreens defaults to true and resolves expo-router's
+  // navigation context, which would emit a second $screen per navigation
+  // alongside PostHogScreenTracker — under route names rather than pathnames.
+  // The PostHog-side Replay Vision scanners are scoped to pathnames, so keep
+  // the tracker and turn autocapture's version off.
+  return posthog ? (
+    <PostHogProvider client={posthog} autocapture={{ captureScreens: false }}>
+      {app}
+    </PostHogProvider>
+  ) : (
+    app
+  );
+}
+
+function PostHogScreenTracker() {
+  const pathname = usePathname();
+  const previousPathname = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!posthog || previousPathname.current === pathname) return;
+    posthog.screen(pathname, {
+      previous_screen: previousPathname.current,
+    });
+    previousPathname.current = pathname;
+  }, [pathname]);
+
+  return null;
 }
 
 function AuthGate() {

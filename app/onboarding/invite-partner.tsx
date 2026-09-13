@@ -6,6 +6,7 @@ import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
 import { formatCode } from '@/lib/invite';
 import { getOrCreatePendingInviteCode } from '@/lib/onboarding';
+import { captureException, posthog } from '@/lib/posthog';
 import { colors, spacing, typography } from '@/lib/theme';
 
 // Onboarding screen — invite the partner via the native share sheet.
@@ -18,8 +19,11 @@ export default function InvitePartnerScreen() {
       await Share.share({
         message: `Join me on Sweatbuds! Use my invite code: ${formatCode(code)}`,
       });
-    } catch {
-      // User dismissed the share sheet — nothing to do.
+      posthog?.capture('partner_invite_shared', {
+        source: 'onboarding',
+      });
+    } catch (error) {
+      captureException(error, { operation: 'partner_invite_share' });
     }
   };
 

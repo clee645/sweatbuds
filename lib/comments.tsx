@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { useAuth } from './auth';
+import { captureException, posthog } from './posthog';
 import { useWorkouts } from './workouts';
 import { supabase } from './supabase';
 import type { WorkoutComment } from '@/types/db';
@@ -190,12 +191,16 @@ export function WorkoutCommentsProvider({ children }: { children: ReactNode }) {
             cause: error,
           });
           (wrapped as Error & { code?: string }).code = error.code;
+          captureException(wrapped, { operation: 'workout_comment_add' });
           throw wrapped;
         }
         throw new Error('Failed to post comment');
       }
 
       const saved = data as WorkoutComment;
+      posthog?.capture('workout_comment_added', {
+        content_length: trimmed.length,
+      });
       setByWorkout((prev) => {
         const list = prev[workoutId] ?? [];
         const replaced = list.some((c) => c.id === tempId)

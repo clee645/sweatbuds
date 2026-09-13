@@ -9,6 +9,7 @@ import { SuccessStep } from '@/components/log/SuccessStep';
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
 import { usePartnership } from '@/lib/partnership';
+import { captureException, posthog } from '@/lib/posthog';
 import { colors } from '@/lib/theme';
 import { useWorkoutSync } from '@/lib/workoutSync';
 import { createWorkout, useWorkouts } from '@/lib/workouts';
@@ -80,7 +81,13 @@ export default function LogWorkoutScreen() {
       addWorkoutLocal(workout);
       setSavedWorkout(workout);
       setStep('success');
+      posthog?.capture('workout_logged', {
+        has_caption: Boolean(workout.caption),
+        is_partnered: Boolean(workout.partnership_id),
+        prior_workout_count: workouts.length,
+      });
     } catch (e) {
+      captureException(e, { operation: 'workout_log' });
       setErrorMessage(
         toUserMessage(e, 'Could not log workout. Try again.'),
       );
@@ -95,6 +102,7 @@ export default function LogWorkoutScreen() {
     selfieUri,
     submitting,
     user,
+    workouts.length,
   ]);
 
   if (!user) {

@@ -24,9 +24,15 @@
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (auto-injected),
 //   REVENUECAT_WEBHOOK_AUTH (shared secret), REVENUECAT_SECRET_KEY (for
 //   TRANSFER-event reconciliation via the RevenueCat REST API).
+//
+// PostHog: POSTHOG_PROJECT_TOKEN and POSTHOG_HOST must both be set as
+//   secrets, otherwise captureServerEvent silently no-ops (see
+//   _shared/posthog.ts).
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+import { captureServerEvent } from '../_shared/posthog.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -155,6 +161,7 @@ serve(async (req) => {
     console.error('subscription_events insert failed:', insertErr);
     return new Response('db error', { status: 500 });
   }
+  const isReplay = (insertErr as any)?.code === '23505';
 
   // TRANSFER carries transferred_to and no trustworthy expiry — reconcile each
   // recipient from RevenueCat's authoritative state.
@@ -171,6 +178,12 @@ serve(async (req) => {
     }
     for (const id of recipients) {
       await reconcileProfileFromRevenueCat(id);
+      if (!isReplay) {
+        await captureServerEvent(id, 'subscription_event_processed', {
+          event_type: eventType,
+          product_id: productId,
+        });
+      }
     }
     return new Response('ok (transfer)', { status: 200 });
   }
@@ -198,6 +211,13 @@ serve(async (req) => {
   } else if (!NOOP_EVENTS.has(eventType)) {
     // Unknown event — log and 200 so RevenueCat doesn't retry forever.
     console.warn('unhandled event type:', eventType);
+  }
+
+  if (!isReplay) {
+    await captureServerEvent(userId, 'subscription_event_processed', {
+      event_type: eventType,
+      product_id: productId,
+    });
   }
 
   return new Response('ok', { status: 200 });

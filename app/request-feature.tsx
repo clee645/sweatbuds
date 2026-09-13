@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
+import { captureException, posthog } from '@/lib/posthog';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -39,9 +40,13 @@ export default function RequestFeatureScreen() {
         .from('feature_requests')
         .insert({ user_id: user.id, description: trimmed });
       if (error) throw error;
+      posthog?.capture('feature_request_submitted', {
+        description_length: trimmed.length,
+      });
       Alert.alert('Thanks!', 'We got your idea.');
       router.back();
     } catch (e) {
+      captureException(e, { operation: 'feature_request_submit' });
       setErrorMessage(toUserMessage(e, 'Could not send. Try again.'));
     } finally {
       setSubmitting(false);

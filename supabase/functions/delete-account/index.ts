@@ -8,9 +8,15 @@
 // SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY are
 // auto-injected by Supabase's edge-function runtime — no manual secret
 // configuration needed for those three.
+//
+// PostHog: POSTHOG_PROJECT_TOKEN and POSTHOG_HOST must both be set as
+//   secrets, otherwise captureServerEvent silently no-ops (see
+//   _shared/posthog.ts).
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+import { captureServerEvent } from '../_shared/posthog.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -51,6 +57,8 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+
+  await captureServerEvent(userRes.user.id, 'account_deleted');
 
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,

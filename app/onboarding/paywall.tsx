@@ -22,6 +22,7 @@ import { matchesDemoCode, setDemoUnlocked } from '@/lib/demoMode';
 import { toUserMessage } from '@/lib/errors';
 import { setPaywallSeen } from '@/lib/onboarding';
 import { redeemPromoCode } from '@/lib/promo';
+import { captureException, posthog } from '@/lib/posthog';
 import {
   hasProEntitlement,
   purchasePackage,
@@ -118,6 +119,10 @@ export default function PaywallScreen() {
     try {
       const result = await purchasePackage(pkg);
       if (result.kind === 'success') {
+        posthog?.capture('subscription_purchase_completed', {
+          plan,
+          source: 'custom_paywall',
+        });
         await finishPaywall();
       } else if (result.kind === 'error') {
         setError(result.message);
@@ -135,9 +140,16 @@ export default function PaywallScreen() {
         result === PAYWALL_RESULT.PURCHASED ||
         result === PAYWALL_RESULT.RESTORED
       ) {
+        if (result === PAYWALL_RESULT.PURCHASED) {
+          posthog?.capture('subscription_purchase_completed', {
+            plan,
+            source: 'revenuecat_paywall',
+          });
+        }
         await finishPaywall();
       }
     } catch (err) {
+      captureException(err, { operation: 'paywall_present' });
       setError(toUserMessage(err, 'Could not open paywall'));
     }
   };

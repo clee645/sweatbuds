@@ -28,9 +28,15 @@
 //   SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are injected
 //   automatically. The anon key is used only to resolve the caller's identity
 //   from their Authorization header (see resolveUserId).
+//
+// PostHog: POSTHOG_PROJECT_TOKEN and POSTHOG_HOST must both be set as
+//   secrets, otherwise captureServerEvent silently no-ops (see
+//   _shared/posthog.ts).
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+import { captureServerEvent } from '../_shared/posthog.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -171,6 +177,11 @@ serve(async (req) => {
     .maybeSingle();
 
   if (existing) {
+    const userId = await resolveUserId(req);
+    await captureServerEvent(userId ?? rcAppUserId, 'promo_code_redeemed', {
+      already_redeemed: true,
+      grant_type: promo.grant_type,
+    });
     return json(200, {
       alreadyRedeemed: true,
       grant_type: promo.grant_type,
@@ -221,6 +232,11 @@ serve(async (req) => {
     console.error('promo_redemptions insert failed:', insertErr);
     return json(500, { error: 'db error' });
   }
+
+  await captureServerEvent(userId ?? rcAppUserId, 'promo_code_redeemed', {
+    already_redeemed: (insertErr as any)?.code === '23505',
+    grant_type: promo.grant_type,
+  });
 
   return json(200, {
     alreadyRedeemed: false,

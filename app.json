@@ -127,7 +127,8 @@
         {
           "icon": "./assets/icon.png"
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true
