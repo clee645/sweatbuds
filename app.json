@@ -128,7 +128,15 @@
           "icon": "./assets/icon.png"
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "sweatbuds-app",
+          "organization": "sweatbuds"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

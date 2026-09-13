@@ -34,10 +34,31 @@ import { SubscriptionProvider } from '@/lib/subscription';
 import { colors } from '@/lib/theme';
 import { useHeroWarmup } from '@/lib/useHeroWarmup';
 import { WorkoutsProvider } from '@/lib/workouts';
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: 'https://6715e0c006b85f4bc1b6943bac28a9b2@o4512077863780352.ingest.us.sentry.io/4512077870333952',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+
+  // Session Replay is deliberately off here — PostHog records sessions (see
+  // lib/posthog.ts) and its Replay Vision scanners depend on those recordings.
+  // Running both recorders doubles on-device cost and burns two replay quotas
+  // on the same sessions.
+  integrations: [Sentry.feedbackIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-export default function RootLayout() {
+export default Sentry.wrap(function RootLayout() {
   useEffect(() => {
     if (__DEV__) return;
     (async () => {
@@ -105,7 +126,7 @@ export default function RootLayout() {
   ) : (
     app
   );
-}
+});
 
 function PostHogScreenTracker() {
   const pathname = usePathname();

@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { DrawerActions } from '@react-navigation/native';
+import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 import * as Notifications from 'expo-notifications';
@@ -19,6 +20,7 @@ import { TimezonePickerModal } from '@/components/settings/TimezonePickerModal';
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
 import { usePartnership } from '@/lib/partnership';
+import { posthog } from '@/lib/posthog';
 import { restorePurchases } from '@/lib/revenuecat';
 import { useSubscription } from '@/lib/subscription';
 import { supabase } from '@/lib/supabase';
@@ -210,6 +212,60 @@ export default function SettingsScreen() {
             />
           ) : null}
         </SettingsSection>
+
+        {__DEV__ ? (
+          <SettingsSection label="Diagnostics">
+            <SettingsRow
+              icon="bug-outline"
+              title="Send test Sentry error"
+              subtitle="Verifies crash reporting"
+              onPress={async () => {
+                try {
+                  const eventId = Sentry.captureException(
+                    new Error('Sweatbuds diagnostic: test error from Settings'),
+                  );
+                  // captureException only enqueues. Flush first so we never
+                  // report success for an event still sitting on the device.
+                  const delivered = await Sentry.flush();
+                  Alert.alert(
+                    delivered ? 'Sent to Sentry' : 'Queued but unconfirmed',
+                    delivered
+                      ? `Event ${eventId}\n\nCheck Issues in Sentry — it should land within seconds.`
+                      : 'The flush timed out, so the event may still be queued. Check your connection.',
+                  );
+                } catch (err) {
+                  Alert.alert('Sentry test failed', toUserMessage(err));
+                }
+              }}
+            />
+            <SettingsRow
+              icon="analytics-outline"
+              title="Send test PostHog event"
+              subtitle="Verifies analytics pipeline"
+              onPress={async () => {
+                if (!posthog) {
+                  Alert.alert(
+                    'PostHog not configured',
+                    'EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN / EXPO_PUBLIC_POSTHOG_HOST are unset, so analytics is disabled in this build.',
+                  );
+                  return;
+                }
+                try {
+                  posthog.capture('diagnostic_test_event', { source: 'settings' });
+                  // capture() only queues — the SDK batches at 20 events or a
+                  // 10s interval, so flush rather than waiting on the timer.
+                  await posthog.flush();
+                  Alert.alert(
+                    'Sent to PostHog',
+                    'Look for diagnostic_test_event under Activity → Explore.',
+                  );
+                } catch (err) {
+                  Alert.alert('PostHog test failed', toUserMessage(err));
+                }
+              }}
+            />
+          </SettingsSection>
+        ) : null}
 
         <SettingsSection label="Account">
           <Pressable
