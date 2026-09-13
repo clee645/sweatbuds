@@ -191,6 +191,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Supabase's Google provider must have "Skip nonce checks" enabled
       // for native sign-in to succeed.
       const result = await GoogleSignin.signIn();
+      // Since v13 the library resolves a dismissed sheet with
+      // { type: 'cancelled' } instead of throwing. Return quietly so a cancel
+      // is not reported as a failure.
+      if (result.type === 'cancelled') {
+        return;
+      }
       const idToken = result.data?.idToken;
       if (!idToken) {
         throw new Error('Google did not return an ID token');
