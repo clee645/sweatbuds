@@ -195,7 +195,9 @@ export function WorkoutCommentsProvider({ children }: { children: ReactNode }) {
           captureException(wrapped, { operation: 'workout_comment_add' });
           throw wrapped;
         }
-        throw new Error('Failed to post comment');
+        const blank = new Error('Failed to post comment: no row returned');
+        captureException(blank, { operation: 'workout_comment_add' });
+        throw blank;
       }
 
       const saved = data as WorkoutComment;

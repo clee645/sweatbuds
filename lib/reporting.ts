@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/react-native';
 
+import { isNetworkError } from './errors';
+
 // Sentry is the system of record for errors — lib/posthog.ts stays product
 // analytics only, so a handled failure is reported in exactly one place.
 //
@@ -14,7 +16,30 @@ export function captureException(
   error: unknown,
   tags?: Record<string, string>,
 ): void {
-  Sentry.captureException(error, tags ? { tags } : undefined);
+  // Offline failures are expected, not bugs. toUserMessage already turns them
+  // into OFFLINE_MESSAGE for the user, and reporting them would bury real
+  // defects under connectivity noise from people on the subway.
+  if (isNetworkError(error)) return;
+  Sentry.captureException(toError(error), tags ? { tags } : undefined);
+}
+
+// Supabase's PostgrestError (and anything else thrown that isn't an Error) has
+// no stack and fails `instanceof Error`, so Sentry files it as "Non-Error
+// exception captured" with no usable title. Wrap it so the issue is readable,
+// keeping the original on `cause`.
+function toError(error: unknown): unknown {
+  if (error instanceof Error) return error;
+  if (typeof error === 'string' && error) return new Error(error);
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message?: unknown }).message === 'string'
+  ) {
+    const { message } = error as { message: string };
+    return new Error(message, { cause: error });
+  }
+  return error;
 }
 
 // Ties subsequent events to a user, so Sentry's "users affected" counts are

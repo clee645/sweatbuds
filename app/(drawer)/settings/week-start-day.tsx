@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { usePartnership } from '@/lib/partnership';
 import { colors, spacing, typography } from '@/lib/theme';
 import { formatDayLabel } from '@/lib/historyWeek';
@@ -65,6 +66,7 @@ export default function WeekStartDayScreen() {
             try {
               await setWeekStartDay(day);
             } catch (e) {
+              captureException(e, { operation: 'week_start_day_update' });
               const msg = toUserMessage(e, 'Try again.');
               Alert.alert('Could not update', msg);
             } finally {

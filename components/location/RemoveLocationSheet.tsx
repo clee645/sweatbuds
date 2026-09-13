@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { SavedLocation } from '@/types/db';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
 type Props = {
@@ -23,6 +24,7 @@ export function RemoveLocationSheet({ visible, location, onCancel, onConfirm }: 
     try {
       await onConfirm(location);
     } catch (e) {
+      captureException(e, { operation: 'location_remove' });
       const message = toUserMessage(e, 'Try again.');
       Alert.alert('Could not remove location', message);
     } finally {

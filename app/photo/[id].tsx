@@ -25,6 +25,7 @@ import { useAuth } from '@/lib/auth';
 import { useWorkoutComments } from '@/lib/comments';
 import { useCommentViews } from '@/lib/commentViews';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { usePartnership } from '@/lib/partnership';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, spacing, typography } from '@/lib/theme';
@@ -216,6 +217,7 @@ export default function PhotoDetailScreen() {
               await deleteWorkout(active);
               removeWorkoutLocal(active.id);
             } catch (err) {
+              captureException(err, { operation: 'workout_delete' });
               Alert.alert(
                 'Could not delete',
                 toUserMessage(err),

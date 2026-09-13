@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -100,6 +101,7 @@ export function TimezonePickerModal({ visible, onClose }: Props) {
       await refreshProfile();
       onClose();
     } catch (e) {
+      captureException(e, { operation: 'timezone_update' });
       const message = toUserMessage(e, 'Try again.');
       Alert.alert('Could not update timezone', message);
     } finally {

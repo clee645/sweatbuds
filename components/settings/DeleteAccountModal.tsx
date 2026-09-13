@@ -11,6 +11,7 @@ import {
 
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import {
   clearOnboardingSeen,
   clearPaywallSeen,
@@ -59,6 +60,7 @@ export function DeleteAccountModal({ visible, onClose }: Props) {
       await clearWidgetSetupSeen();
       await signOut();
     } catch (e) {
+      captureException(e, { operation: 'account_delete' });
       const message = toUserMessage(e);
       Alert.alert('Could not delete account', message);
       setDeleting(false);

@@ -24,6 +24,7 @@ import type { PhotoPrimary } from '@/components/home/WorkoutCard';
 import { useAuth } from '@/lib/auth';
 import { useWorkoutComments } from '@/lib/comments';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { useHistoryWorkouts } from '@/lib/history';
 import { usePartnership } from '@/lib/partnership';
 import { getSignedUrls } from '@/lib/storage';
@@ -187,6 +188,7 @@ export default function DayMemoryScreen() {
               await deleteWorkout(active);
               removeWorkoutLocal(active.id);
             } catch (err) {
+              captureException(err, { operation: 'workout_delete' });
               Alert.alert(
                 'Could not delete',
                 toUserMessage(err),

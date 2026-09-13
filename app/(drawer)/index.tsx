@@ -15,6 +15,7 @@ import { ThisWeekCard } from '@/components/home/ThisWeekCard';
 import { WorkoutCarousel } from '@/components/home/WorkoutCarousel';
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { sharePartnerInvite } from '@/lib/invite';
 import { usePartnership } from '@/lib/partnership';
 import { colors, spacing, typography } from '@/lib/theme';
@@ -140,6 +141,7 @@ export default function HomeScreen() {
     try {
       await sharePartnerInvite(user.id);
     } catch (e) {
+      captureException(e, { operation: 'partner_invite_share' });
       const message = toUserMessage(e);
       Alert.alert('Could not create invite', message);
     }

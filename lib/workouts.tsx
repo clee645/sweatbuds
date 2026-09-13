@@ -11,6 +11,7 @@ import {
 
 import { useAuth } from './auth';
 import { toUserMessage } from './errors';
+import { captureException } from './reporting';
 import { usePartnership } from './partnership';
 import { posthog } from './posthog';
 import { deleteWorkoutImages, uploadWorkoutImage } from './storage';
@@ -172,6 +173,7 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
     if (rowsResult.error) {
       // Stored for display, so it has to be user-facing copy rather than the
       // raw transport string.
+      captureException(rowsResult.error, { operation: 'workouts_load' });
       setError(toUserMessage(rowsResult.error, 'Could not load workouts.'));
       setHasLoaded(true);
       return;

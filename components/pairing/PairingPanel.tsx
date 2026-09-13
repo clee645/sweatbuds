@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import {
   formatCode,
   getOrCreateInviteCode,
@@ -89,6 +90,7 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
       }
       await onPaired(partnerName);
     } catch (e) {
+      captureException(e, { operation: 'pairing_confirm' });
       const message = toUserMessage(e);
       Alert.alert('Could not pair', message);
     } finally {
@@ -108,6 +110,7 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
     try {
       await sharePartnerInvite(userId);
     } catch (e) {
+      captureException(e, { operation: 'partner_invite_share' });
       const message = toUserMessage(e);
       Alert.alert('Could not share invite', message);
     }

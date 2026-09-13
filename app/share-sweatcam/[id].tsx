@@ -20,6 +20,7 @@ import {
   shareViaSystem,
 } from '@/lib/share';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import { useWorkouts } from '@/lib/workouts';
@@ -82,6 +83,7 @@ export default function ShareSweatcamScreen() {
       await fn(fileUri);
       if (successMessage) Alert.alert(successMessage);
     } catch (err) {
+      captureException(err, { operation: 'sweatcam_share' });
       Alert.alert(
         'Could not share',
         toUserMessage(err),

@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PairingPanel } from '@/components/pairing/PairingPanel';
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { unpairPartnership } from '@/lib/invite';
 import { usePartnership } from '@/lib/partnership';
 import { colors, radii, spacing, typography } from '@/lib/theme';
@@ -103,6 +104,7 @@ function PairedView({ partnerName, partnerAvatar, partnershipId, onUnpaired }: P
               await unpairPartnership(partnershipId);
               await onUnpaired();
             } catch (e) {
+              captureException(e, { operation: 'partnership_unpair' });
               const message = toUserMessage(e);
               Alert.alert('Could not unpair', message);
             } finally {

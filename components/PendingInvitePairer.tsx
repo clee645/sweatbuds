@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 
 import { useAuth } from '@/lib/auth';
 import { isNetworkError, toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { pairWithCode } from '@/lib/invite';
 import { clearPendingInviteCode, getPendingInviteCode } from '@/lib/onboarding';
 import { usePartnership } from '@/lib/partnership';
@@ -68,6 +69,7 @@ export function PendingInvitePairer() {
         if (!isNetworkError(e)) {
           await clearPendingInviteCode();
         }
+        captureException(e, { operation: 'pending_invite_pair' });
         Alert.alert('Could not connect with partner', toUserMessage(e));
       }
     })();

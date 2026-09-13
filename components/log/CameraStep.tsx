@@ -23,6 +23,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
 type Phase = 'idle' | 'selfie' | 'environment';
@@ -224,6 +225,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
         environmentUri: env.assets[0].uri,
       });
     } catch (e) {
+      captureException(e, { operation: 'photo_pick' });
       Alert.alert(
         'Could not add photos',
         toUserMessage(e, "Couldn't add those photos. Please try again."),

@@ -12,6 +12,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -72,6 +73,7 @@ export function AddLocationModal({ visible, place, onCancel, onConfirm }: Props)
     try {
       await onConfirm(place);
     } catch (e) {
+      captureException(e, { operation: 'location_add' });
       const message = toUserMessage(e, 'Try again.');
       Alert.alert('Could not add location', message);
     } finally {

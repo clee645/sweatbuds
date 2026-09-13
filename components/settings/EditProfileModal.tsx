@@ -19,6 +19,7 @@ import {
 import { useAuth } from '@/lib/auth';
 import { uploadAvatar } from '@/lib/avatar';
 import { toUserMessage } from '@/lib/errors';
+import { captureException } from '@/lib/reporting';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -77,7 +78,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
           nextAvatarUrl = await uploadAvatar(pendingUri, user.id);
         } catch (uploadErr) {
           const m = toUserMessage(uploadErr, 'Unknown error');
-          throw new Error(`Avatar upload failed: ${m}`);
+          throw new Error(`Avatar upload failed: ${m}`, { cause: uploadErr });
         }
       }
       const { error } = await supabase
@@ -91,6 +92,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
       await refreshProfile();
       onClose();
     } catch (e) {
+      captureException(e, { operation: 'profile_save' });
       const message = toUserMessage(e, 'Try again.');
       Alert.alert('Could not save', message);
     } finally {

@@ -10,6 +10,7 @@ import {
 
 import { useAuth } from './auth';
 import { toUserMessage } from './errors';
+import { captureException } from './reporting';
 import { usePartnership } from './partnership';
 import { supabase } from './supabase';
 import type { Workout } from '@/types/db';
@@ -71,6 +72,7 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
 
     const { data, error: fetchError } = await query;
     if (fetchError) {
+      captureException(fetchError, { operation: 'history_load' });
       setError(toUserMessage(fetchError, 'Could not load history.'));
       setHasLoaded(true);
       return;
