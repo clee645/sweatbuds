@@ -22,7 +22,8 @@ import { matchesDemoCode, setDemoUnlocked } from '@/lib/demoMode';
 import { toUserMessage } from '@/lib/errors';
 import { setPaywallSeen } from '@/lib/onboarding';
 import { redeemPromoCode } from '@/lib/promo';
-import { captureException, posthog } from '@/lib/posthog';
+import { posthog } from '@/lib/posthog';
+import { captureException } from '@/lib/reporting';
 import {
   hasProEntitlement,
   purchasePackage,

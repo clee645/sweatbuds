@@ -10,7 +10,8 @@ import {
 } from 'react';
 
 import { useAuth } from './auth';
-import { captureException, posthog } from './posthog';
+import { posthog } from './posthog';
+import { captureException } from './reporting';
 import { useWorkouts } from './workouts';
 import { supabase } from './supabase';
 import type { WorkoutComment } from '@/types/db';

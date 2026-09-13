@@ -15,7 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
-import { captureException, posthog } from '@/lib/posthog';
+import { posthog } from '@/lib/posthog';
+import { captureException } from '@/lib/reporting';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 

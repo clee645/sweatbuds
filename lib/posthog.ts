@@ -24,10 +24,3 @@ export const posthog =
         enableSessionReplay: true,
       })
     : null;
-
-type ExceptionProperties = Parameters<PostHog['captureException']>[1];
-
-export function captureException(error: unknown, properties?: ExceptionProperties): void {
-  if (!posthog) return;
-  posthog.captureException(error, properties);
-}

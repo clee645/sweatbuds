@@ -16,7 +16,8 @@ import {
 } from 'react';
 
 import { registerPushToken, unregisterPushToken } from './notifications';
-import { captureException, posthog } from './posthog';
+import { posthog } from './posthog';
+import { captureException, clearUser, identifyUser } from './reporting';
 import {
   configureRevenueCat,
   identifyRevenueCatUser,
@@ -142,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     posthog?.identify(userId);
+    identifyUser(userId);
     supabase
       .from('profiles')
       .select(PROFILE_COLUMNS)
@@ -212,6 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (data.user) {
         posthog?.identify(data.user.id);
+        identifyUser(data.user.id);
         if (opts?.requireExisting) {
           posthog?.capture('user_signed_in', { provider: 'google' });
         }
@@ -259,6 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (data.user) {
         posthog?.identify(data.user.id);
+        identifyUser(data.user.id);
         if (opts?.requireExisting) {
           posthog?.capture('user_signed_in', { provider: 'apple' });
         }
@@ -294,6 +298,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await resetRevenueCatUser();
     await supabase.auth.signOut();
     posthog?.reset();
+    clearUser();
   }, [session?.user?.id]);
 
   const value = useMemo<AuthContextValue>(

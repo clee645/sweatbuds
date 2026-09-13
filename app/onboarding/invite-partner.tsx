@@ -6,7 +6,8 @@ import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
 import { formatCode } from '@/lib/invite';
 import { getOrCreatePendingInviteCode } from '@/lib/onboarding';
-import { captureException, posthog } from '@/lib/posthog';
+import { posthog } from '@/lib/posthog';
+import { captureException } from '@/lib/reporting';
 import { colors, spacing, typography } from '@/lib/theme';
 
 // Onboarding screen — invite the partner via the native share sheet.

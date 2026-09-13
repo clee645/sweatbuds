@@ -50,7 +50,6 @@ Sentry.init({
   // lib/posthog.ts) and its Replay Vision scanners depend on those recordings.
   // Running both recorders doubles on-device cost and burns two replay quotas
   // on the same sessions.
-  integrations: [Sentry.feedbackIntegration()],
 
   // uncomment the line below to enable Spotlight (https://spotlightjs.com)
   // spotlight: __DEV__,
