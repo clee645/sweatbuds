@@ -36,10 +36,10 @@
           "instagram"
         ],
         "NSPhotoLibraryAddUsageDescription": "Sweatbuds saves your workout Sweatcams to your photo library when you tap Save.",
-        "NSPhotoLibraryUsageDescription": "Sweatbuds saves your workout Sweatcams to your photo library when you tap Save.",
-        "NSLocationWhenInUseUsageDescription": "Sweatbuds shows nearby gyms when you add a location.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sweatbuds reminds you to log a workout when you arrive at a saved gym.",
-        "NSLocationAlwaysUsageDescription": "Used for arrival reminders at saved gyms.",
+        "NSPhotoLibraryUsageDescription": "Sweatbuds lets you choose a profile photo from your photo library.",
+        "NSLocationWhenInUseUsageDescription": "Sweatbuds uses your location to find nearby gyms when you add a gym.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sweatbuds uses your location in the background only to notice when you arrive at a gym you saved, so it can remind you to log your workout. Your location is never tracked continuously or shared.",
+        "NSLocationAlwaysUsageDescription": "Sweatbuds uses your location in the background only to notice when you arrive at a gym you saved, so it can remind you to log your workout. Your location is never tracked continuously or shared.",
         "UIBackgroundModes": [
           "fetch",
           "remote-notification"
@@ -96,7 +96,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Sweatbuds uses your camera to capture workout selfies and your environment.",
+          "cameraPermission": "Sweatbuds uses your camera to take your workout selfie and a photo of where you're training.",
+          "microphonePermission": false,
           "recordAudioAndroid": false
         }
       ],
@@ -109,7 +110,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Sweatbuds saves your workout Sweatcams to your photo library when you tap Save.",
+          "photosPermission": "Sweatbuds lets you choose a profile photo from your photo library.",
           "savePhotosPermission": "Sweatbuds saves your workout Sweatcams to your photo library when you tap Save.",
           "isAccessMediaLocationEnabled": false
         }
@@ -117,8 +118,8 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Sweatbuds reminds you to log a workout when you arrive at a saved gym.",
-          "locationWhenInUsePermission": "Sweatbuds shows nearby gyms when you add a location.",
+          "locationAlwaysAndWhenInUsePermission": "Sweatbuds uses your location in the background only to notice when you arrive at a gym you saved, so it can remind you to log your workout. Your location is never tracked continuously or shared.",
+          "locationWhenInUsePermission": "Sweatbuds uses your location to find nearby gyms when you add a gym.",
           "isIosBackgroundLocationEnabled": true
         }
       ],

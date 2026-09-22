@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -347,6 +348,17 @@ export default function PaywallScreen() {
           </Text>
         </Pressable>
         <Text style={styles.fineprint}>{copy.footer}</Text>
+        {/* App Review (3.1.2) requires working Terms of Use and Privacy Policy
+            links on the screen where the subscription is purchased. */}
+        <View style={styles.legalRow}>
+          <Pressable hitSlop={6} onPress={() => void Linking.openURL('https://sweatbuds.app/terms')}>
+            <Text style={styles.legalText}>Terms of Use</Text>
+          </Pressable>
+          <Text style={styles.legalText}>•</Text>
+          <Pressable hitSlop={6} onPress={() => void Linking.openURL('https://sweatbuds.app/privacy')}>
+            <Text style={styles.legalText}>Privacy Policy</Text>
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -496,5 +508,16 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 12,
     textAlign: 'center',
+  },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  legalText: {
+    ...typography.caption,
+    color: colors.textDim,
+    fontSize: 12,
   },
 });
