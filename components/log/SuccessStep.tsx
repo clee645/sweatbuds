@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThisWeekCard } from '@/components/home/ThisWeekCard';
 import { usePartnership } from '@/lib/partnership';
@@ -33,6 +33,7 @@ export function SuccessStep({
   allWorkouts,
 }: Props) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { partnership, weekTimezone } = usePartnership();
   const weekWindow =
     getWeekWindow(partnership, weekTimezone) ?? getSoloWeekWindow(weekTimezone);
@@ -80,7 +81,7 @@ export function SuccessStep({
       />
       <Particles />
 
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.titleWrap}>
           <Text style={styles.title}>Logged</Text>
           <Text style={styles.subtitle}>You're on fire</Text>
@@ -104,7 +105,7 @@ export function SuccessStep({
             variant="solo"
           />
         </View>
-      </SafeAreaView>
+      </View>
     </Animated.View>
   );
 }

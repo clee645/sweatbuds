@@ -17,7 +17,7 @@ import {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import { PostComposition, type PostPrimary } from './PostComposition';
@@ -44,6 +44,9 @@ export function PreviewStep({
   onLog,
 }: Props) {
   const router = useRouter();
+  // See CameraStep: a native SafeAreaView in this modal can apply no insets on
+  // the first open, which pushed the header and Log button off screen.
+  const insets = useSafeAreaInsets();
   const [editingCaption, setEditingCaption] = useState(false);
   const [primary, setPrimary] = useState<PostPrimary>('selfie');
 
@@ -70,7 +73,7 @@ export function PreviewStep({
   const captionPlaceholder = 'Add a caption';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -157,7 +160,7 @@ export function PreviewStep({
           </Pressable>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

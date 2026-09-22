@@ -79,9 +79,9 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
   const cameraReadyRef = useRef<boolean>(false);
   const prevActiveRef = useRef<boolean>(active);
   // Insets come from the root provider rather than a native SafeAreaView.
-  // A SafeAreaView measures its own position, and on the first modal open it
-  // measured mid slide-in and applied no insets — so the camera looked
-  // different on the first open vs. every later one.
+  // A native SafeAreaView in this fullScreenModal applies no insets the first
+  // time the modal opens after launch, so the layout differed between the
+  // first open and every later one.
   const insets = useSafeAreaInsets();
   const safeInsetStyle = { paddingTop: insets.top, paddingBottom: insets.bottom };
   const [frameWidth, setFrameWidth] = useState(CAMERA_WIDTH);
