@@ -36,12 +36,10 @@ type Plan = 'monthly' | 'yearly';
 const PLAN_COPY = {
   monthly: {
     button: 'Commit to Your Goals',
-    footer: 'Billed monthly. Cancel anytime.',
     sub: 'No commitment, cancel anytime',
   },
   yearly: {
     button: 'Try for FREE',
-    footer: '7 days free, then billed annually. Cancel anytime.',
     sub: 'No payment due now',
   },
 } as const;
@@ -297,15 +295,12 @@ export default function PaywallScreen() {
           />
         </View>
         <NoPaymentDueRow text={copy.sub} />
-        <View style={styles.ctaGroup}>
-          <OnboardingButton
-            variant="orange"
-            label={submitting ? 'Processing…' : copy.button}
-            onPress={handlePurchase}
-            disabled={submitting || loading}
-          />
-          <Text style={styles.fineprint}>{copy.footer}</Text>
-        </View>
+        <OnboardingButton
+          variant="orange"
+          label={submitting ? 'Processing…' : copy.button}
+          onPress={handlePurchase}
+          disabled={submitting || loading}
+        />
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.linksRow}>
@@ -428,13 +423,13 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
     gap: spacing.md,
   },
-  ctaGroup: {
-    gap: spacing.sm,
-  },
   linksRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: spacing.xl,
+    // Extra room above the links lifts the plans, "No payment due now" and the
+    // CTA (they stack upward from the bottom) without moving the links.
+    marginTop: spacing.md,
   },
   link: {
     ...typography.caption,
@@ -495,11 +490,5 @@ const styles = StyleSheet.create({
     ...typography.bodyStrong,
     fontSize: 13,
     color: colors.accent,
-  },
-  fineprint: {
-    ...typography.caption,
-    color: colors.textDim,
-    fontSize: 12,
-    textAlign: 'center',
   },
 });
