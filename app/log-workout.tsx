@@ -70,21 +70,19 @@ export default function LogWorkoutScreen() {
     }
     setSubmitting(true);
     setErrorMessage(null);
-    const isPartnered = Boolean(
-      partnership && partnership.status === 'active' && partnership.id,
-    );
+    const activePartnershipId =
+      partnership && partnership.status === 'active' ? partnership.id : null;
     // Attempt event: the denominator the success and failure events are read
     // against. Without it a stalled log left no trace at all.
     posthog?.capture('workout_log_attempted', {
       has_caption: Boolean(caption.trim()),
-      is_partnered: isPartnered,
+      is_partnered: Boolean(activePartnershipId),
       prior_workout_count: workouts.length,
     });
     try {
       const workout = await createWorkout({
         userId: user.id,
-        partnershipId:
-          partnership && partnership.status === 'active' ? partnership.id : null,
+        partnershipId: activePartnershipId,
         selfieUri,
         environmentUri,
         caption: caption.trim() || null,

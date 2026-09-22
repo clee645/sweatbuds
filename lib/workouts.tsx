@@ -84,19 +84,14 @@ export async function createWorkout(input: CreateWorkoutInput): Promise<Workout>
     .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
     .single();
 
-  let data, error;
-  try {
-    ({ data, error } = await withTimeout(insert, INSERT_TIMEOUT_MS, 'Workout insert'));
-  } catch (e) {
-    // A stalled insert throws instead of returning an error. Both objects are
-    // already in the bucket, so clean them up before rethrowing — same as the
-    // returned-error path below.
-    await deleteWorkoutImages([selfiePath, environmentPath]);
-    throw e;
-  }
+  // A stalled insert throws; a rejected insert resolves an error. Normalize
+  // both into one failure shape so the single cleanup + rethrow below covers
+  // either — both objects are already in the bucket at this point.
+  const { data, error } = await withTimeout(insert, INSERT_TIMEOUT_MS, 'Workout insert').catch(
+    (e) => ({ data: null, error: e as Error }),
+  );
 
   if (error || !data) {
-    // Both objects are already in the bucket at this point.
     await deleteWorkoutImages([selfiePath, environmentPath]);
     throw error ?? new Error('Failed to insert workout');
   }

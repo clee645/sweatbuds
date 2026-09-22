@@ -14,13 +14,6 @@ type Props = {
   loading?: boolean;
 };
 
-const SPINNER_COLOR: Record<Variant, string> = {
-  primary: '#1F1F1F',
-  secondary: colors.text,
-  accent: '#FFFFFF',
-  orange: '#FFFFFF',
-};
-
 // Pill-shaped onboarding CTA.
 // `primary` — white filled (main action). `secondary` — outlined dark.
 // `accent` — filled red accent. `orange` — filled orange (paywall CTAs).
@@ -48,7 +41,8 @@ export function OnboardingButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={SPINNER_COLOR[variant]} />
+        // Match the spinner to the variant's label color, so the two never drift.
+        <ActivityIndicator color={StyleSheet.flatten(styles[`${variant}Label`]).color} />
       ) : (
         <Text
           style={[
