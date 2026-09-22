@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 
 import { colors, radii, spacing } from '@/lib/theme';
 
@@ -9,6 +9,16 @@ type Props = {
   onPress: () => void;
   variant?: Variant;
   disabled?: boolean;
+  // Shows a spinner in place of the label and blocks taps. Gives the CTA a
+  // visible working state so a slow action never reads as a dead button.
+  loading?: boolean;
+};
+
+const SPINNER_COLOR: Record<Variant, string> = {
+  primary: '#1F1F1F',
+  secondary: colors.text,
+  accent: '#FFFFFF',
+  orange: '#FFFFFF',
 };
 
 // Pill-shaped onboarding CTA.
@@ -20,32 +30,38 @@ export function OnboardingButton({
   onPress,
   variant = 'primary',
   disabled = false,
+  loading = false,
 }: Props) {
+  const blocked = disabled || loading;
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      disabled={blocked}
       style={({ pressed }) => [
         styles.btn,
         styles[variant],
-        disabled &&
+        blocked &&
           (variant === 'accent' || variant === 'orange'
             ? styles.accentDisabled
             : styles.disabled),
-        pressed && !disabled && styles.pressed,
+        pressed && !blocked && styles.pressed,
       ]}
     >
-      <Text
-        style={[
-          styles.label,
-          styles[`${variant}Label`],
-          disabled &&
-            (variant === 'accent' || variant === 'orange') &&
-            styles.accentDisabledLabel,
-        ]}
-      >
-        {label}
-      </Text>
+      {loading ? (
+        <ActivityIndicator color={SPINNER_COLOR[variant]} />
+      ) : (
+        <Text
+          style={[
+            styles.label,
+            styles[`${variant}Label`],
+            blocked &&
+              (variant === 'accent' || variant === 'orange') &&
+              styles.accentDisabledLabel,
+          ]}
+        >
+          {label}
+        </Text>
+      )}
     </Pressable>
   );
 }
