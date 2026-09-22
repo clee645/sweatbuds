@@ -115,16 +115,28 @@ function days(userId: string, weekStartYmd: string, offsets: number[]): Workout[
   return offsets.map((o) => workoutOnDay(userId, weekStartYmd, o));
 }
 
-function settle(p: Partnership, workouts: Workout[], tz = TZ) {
+function settle(
+  p: Partnership,
+  workouts: Workout[],
+  tz = TZ,
+  opts: { now?: Date; memberTimezones?: string[] } = {},
+) {
   return settleCompletedWeeks({
     partnership: p,
     anchorHistory: [],
-    workouts,
     userId: USER_ID,
     partnerId: PARTNER_ID,
     tz,
-    now: NOW,
+    memberTimezones: opts.memberTimezones,
+    loadWorkouts: async () => workouts,
+    now: opts.now ?? NOW,
   });
+}
+
+// Rows for every OTHER completed week are washes (no workouts → both missed);
+// these tests care about the target week's row.
+function rowFor(week: string) {
+  return db.upsertCalls[0]?.rows.find((r) => r.week_start === week);
 }
 
 beforeEach(() => {
@@ -149,11 +161,9 @@ describe('settleCompletedWeeks', () => {
 
     const result = await settle(p, workouts);
 
-    expect(result).toEqual({ inserted: 1 });
+    expect(result.inserted).toBeGreaterThanOrEqual(1);
     expect(db.upsertCalls).toHaveLength(1);
-    const { rows } = db.upsertCalls[0];
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toEqual({
+    expect(rowFor(week)).toEqual({
       partnership_id: PARTNERSHIP_ID,
       week_start: week,
       terms: formatWager({ quantity: 1, text: 'Massage', emoji: '😺' }),
@@ -170,10 +180,9 @@ describe('settleCompletedWeeks', () => {
       ...days(PARTNER_ID, week, [0, 1, 2]), // partner: 3 days → hit
     ];
 
-    const result = await settle(p, workouts);
+    await settle(p, workouts);
 
-    expect(result).toEqual({ inserted: 1 });
-    expect(db.upsertCalls[0].rows[0].winner_user_id).toBe(PARTNER_ID);
+    expect(rowFor(week)?.winner_user_id).toBe(PARTNER_ID);
   });
 
   it('uses ON CONFLICT DO NOTHING so a paid week is never resurrected', async () => {
@@ -190,26 +199,46 @@ describe('settleCompletedWeeks', () => {
     });
   });
 
-  it('both hit the goal → no row (a wash)', async () => {
+  it('both hit the goal → a wash row with no winner', async () => {
     const p = makePartnership();
     const week = targetWeekStart(p);
-    const result = await settle(p, [
+    await settle(p, [
       ...days(USER_ID, week, [0, 1, 2]),
       ...days(PARTNER_ID, week, [0, 1, 2]),
     ]);
 
-    expect(result).toEqual({ inserted: 0 });
-    expect(db.upsertCalls).toHaveLength(0);
+    expect(rowFor(week)).toMatchObject({ status: 'wash', winner_user_id: null });
   });
 
-  it('both missed the goal → no row (a wash)', async () => {
+  it('both missed the goal → a wash row with no winner', async () => {
     const p = makePartnership();
     const week = targetWeekStart(p);
-    const result = await settle(p, [
+    await settle(p, [
       ...days(USER_ID, week, [0, 1]), // 2 days → missed
       ...days(PARTNER_ID, week, [0]), // 1 day → missed
     ]);
 
+    expect(rowFor(week)).toMatchObject({ status: 'wash', winner_user_id: null });
+  });
+
+  it('a wash week, once recorded, is never re-judged under new rules', async () => {
+    const p = makePartnership();
+    const week = targetWeekStart(p);
+    // Both hit a target of 3 → wash row written.
+    await settle(p, [
+      ...days(USER_ID, week, [0, 1, 2, 3]),
+      ...days(PARTNER_ID, week, [0, 1, 2]),
+    ]);
+    expect(rowFor(week)?.status).toBe('wash');
+
+    // Target later raised to 4: the partner would now "miss", but the week is
+    // already in the ledger so it's skipped.
+    db.existingWeekStarts = db.upsertCalls[0].rows.map((r) => r.week_start);
+    db.upsertCalls = [];
+    const result = await settle(makePartnership({ weekly_target: 4 }), [
+      ...days(USER_ID, week, [0, 1, 2, 3]),
+      ...days(PARTNER_ID, week, [0, 1, 2]),
+    ]);
     expect(result).toEqual({ inserted: 0 });
     expect(db.upsertCalls).toHaveLength(0);
   });
@@ -218,13 +247,12 @@ describe('settleCompletedWeeks', () => {
     const p = makePartnership();
     const week = targetWeekStart(p);
     db.existingWeekStarts = [week]; // pretend the row already exists
-    const result = await settle(p, [
+    await settle(p, [
       ...days(USER_ID, week, [0, 1, 2]),
       ...days(PARTNER_ID, week, [0]),
     ]);
 
-    expect(result).toEqual({ inserted: 0 });
-    expect(db.upsertCalls).toHaveLength(0);
+    expect(rowFor(week)).toBeUndefined();
   });
 
   it('does not settle a week that ended before the ledger epoch', async () => {
@@ -233,13 +261,42 @@ describe('settleCompletedWeeks', () => {
     const week = targetWeekStart(base);
     const epochAfterWeek = zonedMidnightUtc(addZonedDays(week, 10), TZ);
     const p = makePartnership({ wager_ledger_since: epochAfterWeek.toISOString() });
-    const result = await settle(p, [
+    await settle(p, [
       ...days(USER_ID, week, [0, 1, 2]),
       ...days(PARTNER_ID, week, [0]),
     ]);
 
-    expect(result).toEqual({ inserted: 0 });
-    expect(db.upsertCalls).toHaveLength(0);
+    expect(rowFor(week)).toBeUndefined();
+  });
+
+  it('waits for a partner in a later timezone to finish their Sunday', async () => {
+    const p = makePartnership({ timezone: 'America/New_York' });
+    const nyTz = 'America/New_York';
+    const buckets = bucketWorkoutsByPartnershipWeek([], p, [], nyTz, NOW);
+    const lastEnded = buckets.find((b) => b.weekEnd.getTime() <= NOW.getTime())!;
+    const workouts = [
+      ...days(USER_ID, lastEnded.startYmd, [0, 1, 2]),
+      ...days(PARTNER_ID, lastEnded.startYmd, [0]),
+    ];
+
+    // One hour after the week ends in New York, it's still Sunday 9pm in LA.
+    const justAfter = new Date(lastEnded.weekEnd.getTime() + HOUR_MS);
+    await settle(p, workouts, nyTz, {
+      now: justAfter,
+      memberTimezones: [nyTz, 'America/Los_Angeles'],
+    });
+    expect(db.upsertCalls[0]?.rows.find((r) => r.week_start === lastEnded.startYmd))
+      .toBeUndefined();
+
+    // Once LA's Sunday is over too, the week settles.
+    db.upsertCalls = [];
+    const afterLa = new Date(lastEnded.weekEnd.getTime() + 3 * HOUR_MS + 60_000);
+    await settle(p, workouts, nyTz, {
+      now: afterLa,
+      memberTimezones: [nyTz, 'America/Los_Angeles'],
+    });
+    expect(db.upsertCalls[0]?.rows.find((r) => r.week_start === lastEnded.startYmd))
+      .toMatchObject({ status: 'won', winner_user_id: USER_ID });
   });
 
   it('does nothing for a non-active partnership', async () => {
@@ -271,12 +328,13 @@ describe('cross-timezone settlement agreement', () => {
     // Partner A's device and partner B's device both resolve the PARTNERSHIP
     // zone, regardless of where each phone physically is.
     await settle(p, workouts, p.timezone!);
-    const keyFromA = db.upsertCalls[0].rows[0].week_start;
+    const keyFromA = db.upsertCalls[0].rows.find((r) => r.status === 'won')?.week_start;
 
     db.upsertCalls = [];
     await settle(p, workouts, p.timezone!);
-    const keyFromB = db.upsertCalls[0].rows[0].week_start;
+    const keyFromB = db.upsertCalls[0].rows.find((r) => r.status === 'won')?.week_start;
 
+    expect(keyFromA).toBeDefined();
     expect(keyFromA).toBe(keyFromB);
   });
 

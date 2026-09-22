@@ -81,7 +81,7 @@ export function zonedYmd(instant: Date | string, tz: string): string {
 }
 
 // Milliseconds that `tz` is ahead of UTC at the given instant.
-function tzOffsetMs(instant: Date, tz: string): number {
+export function tzOffsetMs(instant: Date, tz: string): number {
   const p = partsToRecord(offsetFormatter(tz).formatToParts(instant));
   // hour12:false yields 24 for midnight in some ICU versions; normalize.
   const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute, p.second);

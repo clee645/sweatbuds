@@ -6,15 +6,20 @@ import { useHistoryWorkouts } from './history';
 import { usePartnership } from './partnership';
 import { settleCompletedWeeks } from './wagerSettlement';
 import { getMillisUntilNextRollover } from './week';
+import { deviceTimezone } from './zonedTime';
 
 // Runs the wager-ledger settlement pass in the background so completed weeks get
 // resolved into the `wagers` table without any user action. Fires on mount, on
 // app foreground, whenever the all-time workout set refreshes (foreground/pair
 // change), and via a timer aimed at the next week boundary while the app stays
-// open. Idempotent — see `settleCompletedWeeks`. Meant to be mounted once at the
+// open. Idempotent — see `settleCompletedWeeks`.
+//
+// The history list is only a re-run SIGNAL here: settlement reads the week's
+// workouts from the server itself, so a half-loaded or stale list can never
+// decide a week. Meant to be mounted once at the
 // app root (see `components/WagerSettlementRunner.tsx`).
 export function useWagerSettlement() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { partnership, partner, anchorHistory, weekTimezone } = usePartnership();
   const { workouts } = useHistoryWorkouts();
 
@@ -23,8 +28,9 @@ export function useWagerSettlement() {
 
   // Keep the latest inputs in a ref so the run function is stable and the
   // boundary timer / AppState listener always see current data.
-  const argsRef = useRef({ partnership, anchorHistory, workouts, userId, partnerId, weekTimezone });
-  argsRef.current = { partnership, anchorHistory, workouts, userId, partnerId, weekTimezone };
+  const memberTimezones = [profile?.timezone, partner?.timezone];
+  const argsRef = useRef({ partnership, anchorHistory, userId, partnerId, weekTimezone, memberTimezones });
+  argsRef.current = { partnership, anchorHistory, userId, partnerId, weekTimezone, memberTimezones };
 
   const runningRef = useRef(false);
 
@@ -33,10 +39,10 @@ export function useWagerSettlement() {
     const {
       partnership: p,
       anchorHistory: ah,
-      workouts: w,
       userId: uid,
       partnerId: pid,
       weekTimezone: tz,
+      memberTimezones: zones,
     } = argsRef.current;
     if (!p || p.status !== 'active' || !uid || !pid) return;
     runningRef.current = true;
@@ -44,10 +50,11 @@ export function useWagerSettlement() {
       await settleCompletedWeeks({
         partnership: p,
         anchorHistory: ah,
-        workouts: w,
         userId: uid,
         partnerId: pid,
         tz,
+        // This device's zone too: the user's own workouts are stamped with it.
+        memberTimezones: [...zones, deviceTimezone()],
       });
     } catch {
       // Best-effort; a failed pass simply retries on the next trigger.

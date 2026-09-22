@@ -11,6 +11,7 @@ import {
 } from '@/lib/onboarding';
 import { usePartnership } from '@/lib/partnership';
 import { supabase } from '@/lib/supabase';
+import { deviceTimezone } from '@/lib/zonedTime';
 
 // Persists the user's onboarding choices (weekly plan, wager, and any invite
 // code they generated) into a `partnerships` row once they sign up, so their
@@ -57,7 +58,10 @@ export function PendingInviteRegistrar() {
       // a re-login on a device where the stash was already consumed/cleared).
       if (days == null && !wager && !pendingCode) return;
 
-      const base: Record<string, unknown> = { user_a: userId };
+      // Stamp the creator's zone as the couple's canonical one (same as
+      // lib/invite.ts). Leaving it NULL makes each device fall back to its own
+      // zone, so partners in different zones disagree on week boundaries.
+      const base: Record<string, unknown> = { user_a: userId, timezone: deviceTimezone() };
       if (days != null) base.weekly_target = days;
       if (wager) {
         base.wager_quantity = wager.quantity;
