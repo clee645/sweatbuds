@@ -11,6 +11,7 @@ import {
 } from 'react';
 
 import { useAuth } from './auth';
+import { captureException } from './reporting';
 import { supabase } from './supabase';
 import {
   getCurrentWeekStartDay,
@@ -154,7 +155,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
         .select(ANCHOR_HISTORY_COLUMNS)
         .eq('partnership_id', partnershipId)
         .order('anchor_at', { ascending: true });
-      if (error) return [];
+      if (error) throw error;
       return (data as PartnershipAnchorHistory[] | null) ?? [];
     },
     [],
@@ -174,12 +175,24 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       const previous = partnershipRef.current;
       const next = await fetchPartnership(userId);
       const nextPartner = await fetchPartner(userId, next);
-      const nextHistory = next ? await fetchAnchorHistory(next.id) : [];
 
       partnershipRef.current = next;
       setPartnership(next);
       setPartner(nextPartner);
-      setAnchorHistory(nextHistory);
+
+      if (next) {
+        try {
+          setAnchorHistory(await fetchAnchorHistory(next.id));
+        } catch (err) {
+          // A failed history fetch must NOT collapse to a fresh []: a new array
+          // every refresh changes identity and repaints the whole week list.
+          // Keep the last-known-good history and report the failure — this path
+          // used to swallow its error, so it showed zero exceptions.
+          captureException(err, { operation: 'anchor_history_load' });
+        }
+      } else {
+        setAnchorHistory([]);
+      }
 
       // Detect a fresh pairing transition.
       if (next && next.status === 'active' && nextPartner) {
@@ -241,7 +254,11 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       // make an offline paired user look unpaired, and — because useAccessGate
       // reads partner?.is_pro — could drop a partner-unlocked user to LockedHome
       // purely because their network blipped. Retain last-known-good state and
-      // let the next refresh (foreground/realtime) reconcile.
+      // let the next refresh (foreground/realtime) reconcile. Report it too —
+      // this catch used to hide every fetch failure behind a dev-only warning,
+      // so these paths showed zero exceptions. captureException drops offline
+      // noise itself, so only genuine failures surface.
+      captureException(err, { operation: 'partnership_refresh' });
       if (__DEV__) console.warn('[partnership] refresh failed', err);
     } finally {
       setHasLoaded(true);
@@ -424,9 +441,14 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       setPartnership(data as Partnership);
       partnershipRef.current = data as Partnership;
       // The DB trigger closed the previous era and opened a new one server-
-      // side; pull the refreshed history so era-aware bucketing reflects it.
-      const nextHistory = await fetchAnchorHistory(partnership.id);
-      setAnchorHistory(nextHistory);
+      // side; pull the refreshed history so era-aware bucketing reflects it. A
+      // failure here must not reject the already-committed promotion or wipe the
+      // last-known-good history — retain it and let the next refresh reconcile.
+      try {
+        setAnchorHistory(await fetchAnchorHistory(partnership.id));
+      } catch (err) {
+        captureException(err, { operation: 'anchor_history_load' });
+      }
     },
     [partnership, fetchAnchorHistory],
   );
