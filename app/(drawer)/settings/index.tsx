@@ -21,7 +21,7 @@ import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
 import { usePartnership } from '@/lib/partnership';
 import { posthog } from '@/lib/posthog';
-import { restorePurchases } from '@/lib/revenuecat';
+import { purchaseErrorMessage, restorePurchases } from '@/lib/revenuecat';
 import { useSubscription } from '@/lib/subscription';
 import { supabase } from '@/lib/supabase';
 import { colors, spacing, typography } from '@/lib/theme';
@@ -324,10 +324,7 @@ export default function SettingsScreen() {
                   await RevenueCatUI.presentCustomerCenter();
                   await refreshSubscription();
                 } catch (err) {
-                  Alert.alert(
-                    'Could not open',
-                    toUserMessage(err),
-                  );
+                  Alert.alert('Could not open', purchaseErrorMessage(err, 'customer_center'));
                 }
               }}
             />

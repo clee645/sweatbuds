@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   Alert,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,13 +19,12 @@ import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
 import { PlanCard } from '@/components/onboarding/PlanCard';
 import { TrialTimeline } from '@/components/onboarding/TrialTimeline';
 import { matchesDemoCode, setDemoUnlocked } from '@/lib/demoMode';
-import { toUserMessage } from '@/lib/errors';
 import { setPaywallSeen } from '@/lib/onboarding';
 import { redeemPromoCode } from '@/lib/promo';
 import { posthog } from '@/lib/posthog';
-import { captureException } from '@/lib/reporting';
 import {
   hasProEntitlement,
+  purchaseErrorMessage,
   purchasePackage,
   restorePurchases,
 } from '@/lib/revenuecat';
@@ -151,8 +149,7 @@ export default function PaywallScreen() {
         await finishPaywall();
       }
     } catch (err) {
-      captureException(err, { operation: 'paywall_present' });
-      setError(toUserMessage(err, 'Could not open paywall'));
+      setError(purchaseErrorMessage(err, 'paywall'));
     }
   };
 
@@ -258,8 +255,11 @@ export default function PaywallScreen() {
         </Pressable>
       </View>
 
+      {/* Sized to fit without scrolling on current iPhones; the ScrollView
+          is only a fallback for the smallest screens / large text sizes. */}
       <ScrollView
         showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={false}
         contentContainerStyle={styles.scroll}
       >
         <Text style={styles.title}>Unlock Sweatbuds to reach your goals faster</Text>
@@ -297,13 +297,27 @@ export default function PaywallScreen() {
           />
         </View>
         <NoPaymentDueRow text={copy.sub} />
-        <OnboardingButton
-          variant="orange"
-          label={submitting ? 'Processing…' : copy.button}
-          onPress={handlePurchase}
-          disabled={submitting || loading}
-        />
+        <View style={styles.ctaGroup}>
+          <OnboardingButton
+            variant="orange"
+            label={submitting ? 'Processing…' : copy.button}
+            onPress={handlePurchase}
+            disabled={submitting || loading}
+          />
+          <Text style={styles.fineprint}>{copy.footer}</Text>
+        </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <View style={styles.linksRow}>
+          <Pressable onPress={() => setPromoOpen((o) => !o)} hitSlop={8}>
+            <Text style={styles.link}>Have a promo code?</Text>
+          </Pressable>
+          <Pressable onPress={handleRestore} disabled={restoring} hitSlop={8}>
+            <Text style={styles.link}>
+              {restoring ? 'Restoring…' : 'Restore Purchases'}
+            </Text>
+          </Pressable>
+        </View>
 
         {promoOpen ? (
           <View style={styles.promoRow}>
@@ -317,6 +331,7 @@ export default function PaywallScreen() {
               placeholderTextColor={colors.textDim}
               autoCapitalize="characters"
               autoCorrect={false}
+              autoFocus
               returnKeyType="done"
               onSubmitEditing={handleApplyCode}
               editable={!promoBusy}
@@ -335,30 +350,8 @@ export default function PaywallScreen() {
               <Text style={styles.promoApplyText}>{promoBusy ? '…' : 'Apply'}</Text>
             </Pressable>
           </View>
-        ) : (
-          <Pressable onPress={() => setPromoOpen(true)} hitSlop={8}>
-            <Text style={styles.promoToggle}>Have a promo code?</Text>
-          </Pressable>
-        )}
+        ) : null}
         {promoError ? <Text style={styles.error}>{promoError}</Text> : null}
-
-        <Pressable onPress={handleRestore} disabled={restoring} hitSlop={8}>
-          <Text style={styles.restore}>
-            {restoring ? 'Restoring…' : 'Restore Purchases'}
-          </Text>
-        </Pressable>
-        <Text style={styles.fineprint}>{copy.footer}</Text>
-        {/* App Review (3.1.2) requires working Terms of Use and Privacy Policy
-            links on the screen where the subscription is purchased. */}
-        <View style={styles.legalRow}>
-          <Pressable hitSlop={6} onPress={() => void Linking.openURL('https://sweatbuds.app/terms')}>
-            <Text style={styles.legalText}>Terms of Use</Text>
-          </Pressable>
-          <Text style={styles.legalText}>•</Text>
-          <Pressable hitSlop={6} onPress={() => void Linking.openURL('https://sweatbuds.app/privacy')}>
-            <Text style={styles.legalText}>Privacy Policy</Text>
-          </Pressable>
-        </View>
       </View>
     </SafeAreaView>
   );
@@ -411,7 +404,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.xl,
   },
   timeline: {
     marginBottom: spacing.sm,
@@ -431,29 +424,29 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   footer: {
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
     gap: spacing.md,
+  },
+  ctaGroup: {
+    gap: spacing.sm,
+  },
+  linksRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.xl,
+  },
+  link: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 13,
+    textDecorationLine: 'underline',
   },
   error: {
     ...typography.caption,
     color: colors.danger,
     textAlign: 'center',
     fontSize: 12,
-  },
-  restore: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-  },
-  promoToggle: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
-    textDecorationLine: 'underline',
   },
   promoRow: {
     flexDirection: 'row',
@@ -508,16 +501,5 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 12,
     textAlign: 'center',
-  },
-  legalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  legalText: {
-    ...typography.caption,
-    color: colors.textDim,
-    fontSize: 12,
   },
 });
