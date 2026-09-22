@@ -3,8 +3,15 @@ import type { ImageSource } from 'expo-image';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 import { supabase } from './supabase';
+import { withTimeout } from './withTimeout';
 
 const BUCKET = 'workout-images';
+
+// Bound each step of an image upload. Resize and file read are local but slow
+// on old devices; the upload is network-bound. Without these, a single stalled
+// step hangs createWorkout — and the log spinner in PreviewStep — forever.
+const IMAGE_STEP_TIMEOUT_MS = 20_000;
+const UPLOAD_TIMEOUT_MS = 30_000;
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 // Refresh a bit before the token actually expires so a request mid-render still hits a valid URL.
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
@@ -109,25 +116,37 @@ export async function uploadWorkoutImage(
   workoutId: string,
   kind: 'selfie' | 'environment',
 ): Promise<string> {
-  const resized = await ImageManipulator.manipulateAsync(
-    localUri,
-    [{ resize: { width: 1080 } }],
-    { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+  const resized = await withTimeout(
+    ImageManipulator.manipulateAsync(
+      localUri,
+      [{ resize: { width: 1080 } }],
+      { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+    ),
+    IMAGE_STEP_TIMEOUT_MS,
+    'Image resize',
   );
 
-  const base64 = await FileSystem.readAsStringAsync(resized.uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
+  const base64 = await withTimeout(
+    FileSystem.readAsStringAsync(resized.uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    }),
+    IMAGE_STEP_TIMEOUT_MS,
+    'Image read',
+  );
   const bytes = base64ToBytes(base64);
 
   const path = `${userId}/${workoutId}/${kind}.jpg`;
-  const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, {
-    contentType: 'image/jpeg',
-    // Overwrite rather than collide: createWorkout reuses the same workoutId
-    // when the caller retries, so a retry after a partial failure has to be
-    // able to re-put an object that already landed.
-    upsert: true,
-  });
+  const { error } = await withTimeout(
+    supabase.storage.from(BUCKET).upload(path, bytes, {
+      contentType: 'image/jpeg',
+      // Overwrite rather than collide: createWorkout reuses the same workoutId
+      // when the caller retries, so a retry after a partial failure has to be
+      // able to re-put an object that already landed.
+      upsert: true,
+    }),
+    UPLOAD_TIMEOUT_MS,
+    'Image upload',
+  );
   if (error) throw error;
 
   return path;

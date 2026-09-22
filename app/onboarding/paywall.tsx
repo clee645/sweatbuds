@@ -112,10 +112,17 @@ export default function PaywallScreen() {
     router.replace('/');
   };
 
+  const captureFailed = (source: string, reason: string) =>
+    posthog?.capture('subscription_purchase_failed', { plan, source, reason });
+
   const handlePurchase = async () => {
     if (submitting) return;
     setError(null);
     const pkg = packages[plan];
+    const source = pkg ? 'custom_paywall' : 'revenuecat_paywall';
+    // Attempt event: the denominator for the completion and failure events.
+    // Without it a tap that led nowhere left no trace at all.
+    posthog?.capture('subscription_purchase_attempted', { plan, source });
     if (!pkg) {
       // Offerings unavailable — fall back to RC's prebuilt paywall, which
       // can render against a default RC dashboard configuration even when
@@ -134,6 +141,7 @@ export default function PaywallScreen() {
         await finishPaywall();
       } else if (result.kind === 'error') {
         setError(result.message);
+        captureFailed('custom_paywall', 'error');
       }
       // cancelled — silent
     } finally {
@@ -142,22 +150,39 @@ export default function PaywallScreen() {
   };
 
   const presentRcPaywall = async () => {
+    setSubmitting(true);
     try {
       const result = await RevenueCatUI.presentPaywall();
-      if (
-        result === PAYWALL_RESULT.PURCHASED ||
-        result === PAYWALL_RESULT.RESTORED
-      ) {
-        if (result === PAYWALL_RESULT.PURCHASED) {
+      switch (result) {
+        case PAYWALL_RESULT.PURCHASED:
           posthog?.capture('subscription_purchase_completed', {
             plan,
             source: 'revenuecat_paywall',
           });
-        }
-        await finishPaywall();
+          await finishPaywall();
+          break;
+        case PAYWALL_RESULT.RESTORED:
+          await finishPaywall();
+          break;
+        case PAYWALL_RESULT.CANCELLED:
+          // User closed the sheet themselves — nothing to say.
+          break;
+        case PAYWALL_RESULT.NOT_PRESENTED:
+        case PAYWALL_RESULT.ERROR:
+          // The fallback sheet could not open or failed. Left silent, every tap
+          // read as a dead button — surface it and record why.
+          setError("We couldn't open checkout. Please try again in a moment.");
+          captureFailed(
+            'revenuecat_paywall',
+            result === PAYWALL_RESULT.NOT_PRESENTED ? 'not_presented' : 'error',
+          );
+          break;
       }
     } catch (err) {
       setError(purchaseErrorMessage(err, 'paywall'));
+      captureFailed('revenuecat_paywall', 'exception');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -316,9 +341,9 @@ export default function PaywallScreen() {
           <NoPaymentDueRow text={copy.sub} />
           <OnboardingButton
             variant="orange"
-            label={submitting ? 'Processing…' : copy.button}
+            label={copy.button}
             onPress={handlePurchase}
-            disabled={submitting || loading}
+            loading={submitting || loading}
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
 

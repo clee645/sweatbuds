@@ -12,6 +12,7 @@ import { usePartnership } from '@/lib/partnership';
 import { posthog } from '@/lib/posthog';
 import { captureException } from '@/lib/reporting';
 import { colors } from '@/lib/theme';
+import { isTimeoutError } from '@/lib/withTimeout';
 import { useWorkoutSync } from '@/lib/workoutSync';
 import { createWorkout, useWorkouts } from '@/lib/workouts';
 import type { Workout } from '@/types/db';
@@ -69,11 +70,19 @@ export default function LogWorkoutScreen() {
     }
     setSubmitting(true);
     setErrorMessage(null);
+    const activePartnershipId =
+      partnership && partnership.status === 'active' ? partnership.id : null;
+    // Attempt event: the denominator the success and failure events are read
+    // against. Without it a stalled log left no trace at all.
+    posthog?.capture('workout_log_attempted', {
+      has_caption: Boolean(caption.trim()),
+      is_partnered: Boolean(activePartnershipId),
+      prior_workout_count: workouts.length,
+    });
     try {
       const workout = await createWorkout({
         userId: user.id,
-        partnershipId:
-          partnership && partnership.status === 'active' ? partnership.id : null,
+        partnershipId: activePartnershipId,
         selfieUri,
         environmentUri,
         caption: caption.trim() || null,
@@ -89,6 +98,9 @@ export default function LogWorkoutScreen() {
       });
     } catch (e) {
       captureException(e, { operation: 'workout_log' });
+      posthog?.capture('workout_log_failed', {
+        reason: isTimeoutError(e) ? 'timeout' : 'error',
+      });
       setErrorMessage(
         toUserMessage(e, 'Could not log workout. Try again.'),
       );

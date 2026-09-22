@@ -16,8 +16,13 @@ import { usePartnership } from './partnership';
 import { posthog } from './posthog';
 import { deleteWorkoutImages, uploadWorkoutImage } from './storage';
 import { supabase } from './supabase';
+import { withTimeout } from './withTimeout';
 import { deviceTimezone } from './zonedTime';
 import type { Workout } from '@/types/db';
+
+// Bound the row insert so a stalled request can't hang the log spinner after
+// the images already landed. The uploads carry their own timeouts in storage.ts.
+const INSERT_TIMEOUT_MS = 20_000;
 
 type CreateWorkoutInput = {
   userId: string;
@@ -61,7 +66,7 @@ export async function createWorkout(input: CreateWorkoutInput): Promise<Workout>
   const trimmed = input.caption?.trim();
   const caption = trimmed && trimmed.length > 0 ? trimmed.slice(0, 140) : null;
 
-  const { data, error } = await supabase
+  const insert = supabase
     .from('workouts')
     .insert({
       id: workoutId,
@@ -79,8 +84,14 @@ export async function createWorkout(input: CreateWorkoutInput): Promise<Workout>
     .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
     .single();
 
+  // A stalled insert throws; a rejected insert resolves an error. Normalize
+  // both into one failure shape so the single cleanup + rethrow below covers
+  // either — both objects are already in the bucket at this point.
+  const { data, error } = await withTimeout(insert, INSERT_TIMEOUT_MS, 'Workout insert').catch(
+    (e) => ({ data: null, error: e as Error }),
+  );
+
   if (error || !data) {
-    // Both objects are already in the bucket at this point.
     await deleteWorkoutImages([selfiePath, environmentPath]);
     throw error ?? new Error('Failed to insert workout');
   }

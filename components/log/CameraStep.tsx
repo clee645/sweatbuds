@@ -25,6 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toUserMessage } from '@/lib/errors';
 import { captureException } from '@/lib/reporting';
 import { colors, radii, spacing, typography } from '@/lib/theme';
+import { withTimeout } from '@/lib/withTimeout';
 
 type Phase = 'idle' | 'selfie' | 'environment';
 
@@ -49,22 +50,6 @@ function captureErrorMessage(e: unknown): string {
     return "Camera timed out. Check that nothing else is using it, then try again.";
   }
   return "Couldn't capture. Hold steady and try again.";
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-    p.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
 }
 
 export function CameraStep({ active, onCapturesComplete }: Props) {
