@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -63,6 +65,14 @@ export default function PaywallScreen() {
   const [promoCode, setPromoCode] = useState('');
   const [promoBusy, setPromoBusy] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
+
+  // A promo error is a transient hint, not a state to sit on: clear it after a
+  // few seconds (typing or closing the field also clears it immediately).
+  useEffect(() => {
+    if (!promoError) return;
+    const timer = setTimeout(() => setPromoError(null), 3000);
+    return () => clearTimeout(timer);
+  }, [promoError]);
   // Set when a 'discount' promo rebinds the paywall to a cheaper offering.
   const [promoOffering, setPromoOffering] = useState<PurchasesOffering | null>(null);
   const [promoLabel, setPromoLabel] = useState<string | null>(null);
@@ -253,101 +263,117 @@ export default function PaywallScreen() {
         </Pressable>
       </View>
 
-      {/* Sized to fit without scrolling on current iPhones; the ScrollView
-          is only a fallback for the smallest screens / large text sizes. */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        alwaysBounceVertical={false}
-        contentContainerStyle={styles.scroll}
+      {/* Lifts the plans, CTA and promo field above the keyboard when the
+          promo code field is focused; the ScrollView above absorbs the lost
+          height. */}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Text style={styles.title}>Unlock Sweatbuds to reach your goals faster</Text>
+        {/* Sized to fit without scrolling on current iPhones; the ScrollView
+            is only a fallback for the smallest screens / large text sizes. */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          alwaysBounceVertical={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={styles.scroll}
+        >
+          <Text style={styles.title}>Unlock Sweatbuds to reach your goals faster</Text>
 
-        <View style={styles.timeline}>
-          <TrialTimeline plan={plan} />
-        </View>
-
-        {promoLabel ? (
-          <View style={styles.promoPill}>
-            <Ionicons name="pricetag" size={13} color={colors.accent} />
-            <Text style={styles.promoPillText}>{promoLabel}</Text>
+          <View style={styles.timeline}>
+            <TrialTimeline plan={plan} />
           </View>
-        ) : null}
 
-        <Text style={styles.covers}>One subscription covers both{'\n'}partners</Text>
-      </ScrollView>
+          {promoLabel ? (
+            <View style={styles.promoPill}>
+              <Ionicons name="pricetag" size={13} color={colors.accent} />
+              <Text style={styles.promoPillText}>{promoLabel}</Text>
+            </View>
+          ) : null}
 
-      <View style={styles.footer}>
-        <View style={styles.plans}>
-          <PlanCard
-            title="Monthly"
-            price={display.monthly.price}
-            period={display.monthly.period}
-            selected={plan === 'monthly'}
-            onPress={() => setPlan('monthly')}
-          />
-          <PlanCard
-            title="Yearly"
-            price={display.yearly.price}
-            period={display.yearly.period}
-            badge="7-Day TRIAL"
-            selected={plan === 'yearly'}
-            onPress={() => setPlan('yearly')}
-          />
-        </View>
-        <NoPaymentDueRow text={copy.sub} />
-        <OnboardingButton
-          variant="orange"
-          label={submitting ? 'Processing…' : copy.button}
-          onPress={handlePurchase}
-          disabled={submitting || loading}
-        />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Text style={styles.covers}>One subscription covers both{'\n'}partners</Text>
+        </ScrollView>
 
-        <View style={styles.linksRow}>
-          <Pressable onPress={() => setPromoOpen((o) => !o)} hitSlop={8}>
-            <Text style={styles.link}>Have a promo code?</Text>
-          </Pressable>
-          <Pressable onPress={handleRestore} disabled={restoring} hitSlop={8}>
-            <Text style={styles.link}>
-              {restoring ? 'Restoring…' : 'Restore Purchases'}
-            </Text>
-          </Pressable>
-        </View>
-
-        {promoOpen ? (
-          <View style={styles.promoRow}>
-            <TextInput
-              value={promoCode}
-              onChangeText={(t) => {
-                setPromoCode(t);
-                if (promoError) setPromoError(null);
-              }}
-              placeholder="Promo code"
-              placeholderTextColor={colors.textDim}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleApplyCode}
-              editable={!promoBusy}
-              style={styles.promoInput}
+        <View style={styles.footer}>
+          <View style={styles.plans}>
+            <PlanCard
+              title="Monthly"
+              price={display.monthly.price}
+              period={display.monthly.period}
+              selected={plan === 'monthly'}
+              onPress={() => setPlan('monthly')}
             />
+            <PlanCard
+              title="Yearly"
+              price={display.yearly.price}
+              period={display.yearly.period}
+              badge="7-Day TRIAL"
+              selected={plan === 'yearly'}
+              onPress={() => setPlan('yearly')}
+            />
+          </View>
+          <NoPaymentDueRow text={copy.sub} />
+          <OnboardingButton
+            variant="orange"
+            label={submitting ? 'Processing…' : copy.button}
+            onPress={handlePurchase}
+            disabled={submitting || loading}
+          />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <View style={styles.linksRow}>
             <Pressable
-              onPress={handleApplyCode}
-              disabled={promoBusy || !promoCode.trim()}
-              hitSlop={6}
-              style={({ pressed }) => [
-                styles.promoApply,
-                (promoBusy || !promoCode.trim()) && styles.promoApplyDisabled,
-                pressed && styles.pressed,
-              ]}
+              onPress={() => {
+                setPromoOpen((o) => !o);
+                setPromoError(null);
+              }}
+              hitSlop={8}
             >
-              <Text style={styles.promoApplyText}>{promoBusy ? '…' : 'Apply'}</Text>
+              <Text style={styles.link}>Have a promo code?</Text>
+            </Pressable>
+            <Pressable onPress={handleRestore} disabled={restoring} hitSlop={8}>
+              <Text style={styles.link}>
+                {restoring ? 'Restoring…' : 'Restore Purchases'}
+              </Text>
             </Pressable>
           </View>
-        ) : null}
-        {promoError ? <Text style={styles.error}>{promoError}</Text> : null}
-      </View>
+
+          {promoOpen ? (
+            <View style={styles.promoRow}>
+              <TextInput
+                value={promoCode}
+                onChangeText={(t) => {
+                  setPromoCode(t);
+                  if (promoError) setPromoError(null);
+                }}
+                placeholder="Promo code"
+                placeholderTextColor={colors.textDim}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={handleApplyCode}
+                editable={!promoBusy}
+                style={styles.promoInput}
+              />
+              <Pressable
+                onPress={handleApplyCode}
+                disabled={promoBusy || !promoCode.trim()}
+                hitSlop={6}
+                style={({ pressed }) => [
+                  styles.promoApply,
+                  (promoBusy || !promoCode.trim()) && styles.promoApplyDisabled,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.promoApplyText}>{promoBusy ? '…' : 'Apply'}</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {promoError ? <Text style={styles.error}>{promoError}</Text> : null}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -389,6 +415,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pressed: { opacity: 0.5 },
+  flex: { flex: 1 },
   scroll: {
     paddingBottom: spacing.lg,
   },
