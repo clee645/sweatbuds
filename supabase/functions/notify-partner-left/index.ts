@@ -27,6 +27,12 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  // Only the database trigger (holding the service role key) may invoke this.
+  // Without it, anyone with the public anon key could push arbitrary users.
+  if (req.headers.get('Authorization') !== `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   let body: { recipient_id?: string };
   try {
     body = await req.json();
