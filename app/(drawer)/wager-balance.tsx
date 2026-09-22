@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { WagerSettledCelebration } from '@/components/wager/WagerSettledCelebration';
 import { useAuth } from '@/lib/auth';
 import { useHistoryWorkouts } from '@/lib/history';
 import {
@@ -22,6 +23,7 @@ import {
   partnershipWeekGoalHit,
 } from '@/lib/historyWeek';
 import { usePartnership } from '@/lib/partnership';
+import { captureException } from '@/lib/reporting';
 import { supabase } from '@/lib/supabase';
 import { colors, gradients, radii, spacing, typography } from '@/lib/theme';
 
@@ -40,6 +42,7 @@ export default function WagerBalanceScreen() {
 
   const [wagers, setWagers] = useState<DisplayWager[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [celebrating, setCelebrating] = useState<DisplayWager | null>(null);
   const flatListRef = useRef<FlatList<DisplayWager>>(null);
 
   const userId = user?.id ?? null;
@@ -93,6 +96,7 @@ export default function WagerBalanceScreen() {
   const markOne = async () => {
     const target = wagers[activeIndex];
     if (!target) return;
+    setCelebrating(target);
     const next = wagers.filter((_, i) => i !== activeIndex);
     setWagers(next);
     const newIndex = Math.min(activeIndex, Math.max(next.length - 1, 0));
@@ -109,7 +113,18 @@ export default function WagerBalanceScreen() {
       .from('wagers')
       .update({ status: 'settled' })
       .eq('id', target.id);
-    if (error) await load();
+    if (error) {
+      setCelebrating(null);
+      await load();
+      return;
+    }
+    // Fire-and-forget: a failed push shouldn't undo a settlement that landed.
+    supabase.functions
+      .invoke('notify-wager-settled', { body: { wager_id: target.id } })
+      .then(({ error: notifyError }) => {
+        if (notifyError) captureException(notifyError, { op: 'notify_wager_settled' });
+      })
+      .catch((e) => captureException(e, { op: 'notify_wager_settled' }));
   };
 
   const markAll = async () => {
@@ -285,6 +300,15 @@ export default function WagerBalanceScreen() {
           <Text style={styles.secondaryLabel}>Mark all as done</Text>
         </Pressable>
       </View>
+
+      {celebrating ? (
+        <WagerSettledCelebration
+          terms={celebrating.terms}
+          youWon={celebrating.youWon}
+          partnerName={partnerName}
+          onDismiss={() => setCelebrating(null)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

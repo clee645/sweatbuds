@@ -90,11 +90,17 @@ type PartnerLeftData = {
   type: 'partner_left';
 };
 
+type PartnerSettledWagerData = {
+  type: 'partner_settled_wager';
+  wager_id: string;
+};
+
 type PartnerPushData =
   | PartnerLoggedData
   | PartnerPairedData
   | PartnerCommentedData
-  | PartnerLeftData;
+  | PartnerLeftData
+  | PartnerSettledWagerData;
 
 function partnerPushType(data: unknown): PartnerPushData['type'] | null {
   if (typeof data !== 'object' || data === null) return null;
@@ -103,7 +109,8 @@ function partnerPushType(data: unknown): PartnerPushData['type'] | null {
     t === 'partner_logged' ||
     t === 'partner_paired' ||
     t === 'partner_commented' ||
-    t === 'partner_left'
+    t === 'partner_left' ||
+    t === 'partner_settled_wager'
   ) {
     return t;
   }
@@ -125,6 +132,8 @@ function workoutIdFromData(data: unknown): string | null {
 //                        so the partner profile resolves locally, then sync.
 //   - partner_commented: partner left a comment; refresh comments. On tap,
 //                        deep-link to the photo detail screen.
+//   - partner_settled_wager: partner marked a wager done. Nothing to refresh
+//                        (Wager Balance reloads on focus); on tap, open it.
 export function attachWidgetRefreshOnPush(getCurrent: () => {
   partner: Profile | null;
   partnership: Partnership | null;
@@ -141,6 +150,8 @@ export function attachWidgetRefreshOnPush(getCurrent: () => {
     const data = notification.request.content.data;
     const kind = partnerPushType(data);
     if (!kind) return;
+
+    if (kind === 'partner_settled_wager') return;
 
     if (kind === 'partner_paired') {
       const { refreshPartnership } = getCurrent();
@@ -193,6 +204,13 @@ export function attachWidgetRefreshOnPush(getCurrent: () => {
             // Router may not be ready on cold start — the refresh below still
             // runs so the comment shows when the user navigates manually.
           }
+        }
+      }
+      if (kind === 'partner_settled_wager') {
+        try {
+          router.push('/wager-balance');
+        } catch {
+          // Router may not be ready on cold start.
         }
       }
       void handler(response.notification);
