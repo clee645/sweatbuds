@@ -13,6 +13,8 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+import { isServiceRoleRequest } from '../_shared/auth.ts';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const EXPO_ACCESS_TOKEN = Deno.env.get('EXPO_ACCESS_TOKEN');
@@ -46,7 +48,7 @@ serve(async (req) => {
 
   // Only the database trigger (holding the service role key) may invoke this.
   // Without it, anyone with the public anon key could push arbitrary users.
-  if (req.headers.get('Authorization') !== `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`) {
+  if (!isServiceRoleRequest(req, SUPABASE_SERVICE_ROLE_KEY)) {
     return new Response('Unauthorized', { status: 401 });
   }
 

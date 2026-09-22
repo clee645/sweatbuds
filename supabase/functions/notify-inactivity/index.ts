@@ -1,5 +1,5 @@
 // Supabase Edge Function: notify-inactivity
-// Fired hourly by pg_cron (see migration 0030). Finds couples where neither
+// Fired hourly by pg_cron (see migration 0031). Finds couples where neither
 // partner has posted in 4 / 7 / 14 days and sends the matching reminder to
 // BOTH partners — once per stage per quiet stretch, and only during the
 // couple's local daytime window. Thresholds, copy and the window live in
@@ -13,6 +13,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+import { isServiceRoleRequest } from '../_shared/auth.ts';
 import {
   dueInactivityNudge,
   isWithinSendWindow,
@@ -42,7 +43,7 @@ serve(async (req) => {
   }
 
   // Only the cron job (holding the service role key) may invoke this.
-  if (req.headers.get('Authorization') !== `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`) {
+  if (!isServiceRoleRequest(req, SUPABASE_SERVICE_ROLE_KEY)) {
     return new Response('Unauthorized', { status: 401 });
   }
 
