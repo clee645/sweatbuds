@@ -161,6 +161,21 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Refresh the anchor history, keeping the last-known-good list on failure. A
+  // failed fetch must NOT collapse to a fresh []: a new array every refresh
+  // changes identity and repaints the whole week list. This path used to
+  // swallow its error, so it showed zero exceptions — report it instead.
+  const loadAnchorHistory = useCallback(
+    async (partnershipId: string) => {
+      try {
+        setAnchorHistory(await fetchAnchorHistory(partnershipId));
+      } catch (err) {
+        captureException(err, { operation: 'anchor_history_load' });
+      }
+    },
+    [fetchAnchorHistory],
+  );
+
   const refresh = useCallback(async () => {
     if (!userId) {
       setPartnership(null);
@@ -181,15 +196,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       setPartner(nextPartner);
 
       if (next) {
-        try {
-          setAnchorHistory(await fetchAnchorHistory(next.id));
-        } catch (err) {
-          // A failed history fetch must NOT collapse to a fresh []: a new array
-          // every refresh changes identity and repaints the whole week list.
-          // Keep the last-known-good history and report the failure — this path
-          // used to swallow its error, so it showed zero exceptions.
-          captureException(err, { operation: 'anchor_history_load' });
-        }
+        await loadAnchorHistory(next.id);
       } else {
         setAnchorHistory([]);
       }
@@ -263,7 +270,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
     } finally {
       setHasLoaded(true);
     }
-  }, [userId, fetchPartnership, fetchPartner, fetchAnchorHistory]);
+  }, [userId, fetchPartnership, fetchPartner, loadAnchorHistory]);
 
   useEffect(() => {
     void refresh();
@@ -441,16 +448,12 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       setPartnership(data as Partnership);
       partnershipRef.current = data as Partnership;
       // The DB trigger closed the previous era and opened a new one server-
-      // side; pull the refreshed history so era-aware bucketing reflects it. A
-      // failure here must not reject the already-committed promotion or wipe the
-      // last-known-good history — retain it and let the next refresh reconcile.
-      try {
-        setAnchorHistory(await fetchAnchorHistory(partnership.id));
-      } catch (err) {
-        captureException(err, { operation: 'anchor_history_load' });
-      }
+      // side; pull the refreshed history so era-aware bucketing reflects it.
+      // loadAnchorHistory keeps the last-known-good list if that refetch fails,
+      // so a failure never rejects the already-committed promotion.
+      await loadAnchorHistory(partnership.id);
     },
-    [partnership, fetchAnchorHistory],
+    [partnership, loadAnchorHistory],
   );
 
   const value = useMemo<PartnershipContextValue>(
