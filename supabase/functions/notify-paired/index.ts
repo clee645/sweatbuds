@@ -80,8 +80,8 @@ serve(async (req) => {
 
   const visiblePayload = {
     to: tokenRow.token,
-    title: `${joinerName} paired with you!`,
-    body: 'Tap to start logging together',
+    title: `🎉 ${joinerName} joined your team`,
+    body: 'Time to stay accountable together',
     sound: 'default',
     data: { type: 'partner_paired', partnership_id: partnership.id },
   };
