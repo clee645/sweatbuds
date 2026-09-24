@@ -25,7 +25,10 @@ import { setPaywallSeen } from '@/lib/onboarding';
 import { redeemPromoCode } from '@/lib/promo';
 import { posthog } from '@/lib/posthog';
 import {
+  checkTrialEligibility,
+  freeTrialDays,
   hasProEntitlement,
+  peekTrialEligibility,
   purchaseErrorMessage,
   purchasePackage,
   restorePurchases,
@@ -43,6 +46,12 @@ const PLAN_COPY = {
   yearly: {
     button: 'Try for FREE',
     sub: 'No payment due now',
+  },
+  // Yearly when the customer can't get the free trial (already used it, e.g.
+  // a resubscriber). Apple bills immediately, so nothing may promise "free".
+  yearlyNoTrial: {
+    button: 'Start sweating together',
+    sub: 'Cancel anytime',
   },
 } as const;
 
@@ -77,8 +86,6 @@ export default function PaywallScreen() {
   const [promoOffering, setPromoOffering] = useState<PurchasesOffering | null>(null);
   const [promoLabel, setPromoLabel] = useState<string | null>(null);
 
-  const copy = PLAN_COPY[plan];
-
   // A discount promo swaps in its own offering; otherwise use the current one.
   const activeOffering = promoOffering ?? offering;
 
@@ -88,6 +95,48 @@ export default function PaywallScreen() {
       yearly: activeOffering?.annual ?? null,
     } satisfies Record<Plan, PurchasesPackage | null>;
   }, [activeOffering]);
+
+  // productId -> can this customer start its free trial. Seeded from the cache
+  // the subscription provider warms, so the CTA is right on first paint; null
+  // while a check is still in flight (the CTA stays disabled until it lands).
+  const productIds = useMemo(
+    () =>
+      [packages.monthly, packages.yearly]
+        .filter((p) => p !== null)
+        .map((p) => p.product.identifier),
+    [packages],
+  );
+  const [eligibility, setEligibility] = useState<Record<string, boolean> | null>(() =>
+    peekTrialEligibility(productIds),
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const cached = peekTrialEligibility(productIds);
+    setEligibility(cached);
+    if (cached) return;
+    const products = [packages.monthly, packages.yearly]
+      .filter((p) => p !== null)
+      .map((p) => p.product);
+    void checkTrialEligibility(products).then((result) => {
+      if (!cancelled) setEligibility(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [packages, productIds]);
+
+  // Days of free trial this customer would get on each plan; null = billed today.
+  const trialDays = useMemo(() => {
+    const forPlan = (p: Plan) => {
+      const product = packages[p]?.product;
+      if (!product || !eligibility?.[product.identifier]) return null;
+      return freeTrialDays(product);
+    };
+    return { monthly: forPlan('monthly'), yearly: forPlan('yearly') };
+  }, [packages, eligibility]);
+
+  const copy =
+    plan === 'yearly' && trialDays.yearly === null ? PLAN_COPY.yearlyNoTrial : PLAN_COPY[plan];
 
   const display = useMemo(() => {
     const monthly = packages.monthly?.product;
@@ -282,7 +331,7 @@ export default function PaywallScreen() {
           <Text style={styles.title}>Unlock Sweatbuds to reach your goals faster</Text>
 
           <View style={styles.timeline}>
-            <TrialTimeline plan={plan} />
+            <TrialTimeline trialDays={trialDays[plan]} />
           </View>
 
           {promoLabel ? (
@@ -308,7 +357,7 @@ export default function PaywallScreen() {
               title="Yearly"
               price={display.yearly.price}
               period={display.yearly.period}
-              badge="7-Day TRIAL"
+              badge={trialDays.yearly ? `${trialDays.yearly}-Day TRIAL` : undefined}
               selected={plan === 'yearly'}
               onPress={() => setPlan('yearly')}
             />
@@ -318,7 +367,7 @@ export default function PaywallScreen() {
             variant="orange"
             label={submitting ? 'Processing…' : copy.button}
             onPress={handlePurchase}
-            disabled={submitting || loading}
+            disabled={submitting || loading || (productIds.length > 0 && eligibility === null)}
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
 

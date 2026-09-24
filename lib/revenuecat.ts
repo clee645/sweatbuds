@@ -1,10 +1,12 @@
 import { LogBox, Platform } from 'react-native';
 import Purchases, {
+  INTRO_ELIGIBILITY_STATUS,
   LOG_LEVEL,
   PURCHASES_ERROR_CODE,
   type CustomerInfo,
   type PurchasesOffering,
   type PurchasesPackage,
+  type PurchasesStoreProduct,
 } from 'react-native-purchases';
 
 import { captureException } from './reporting';
@@ -41,6 +43,7 @@ export function isRevenueCatConfigured(): boolean {
 
 export async function identifyRevenueCatUser(userId: string): Promise<CustomerInfo | null> {
   if (!configured) return null;
+  trialEligibilityCache.clear();
   try {
     const { customerInfo } = await Purchases.logIn(userId);
     return customerInfo;
@@ -52,6 +55,7 @@ export async function identifyRevenueCatUser(userId: string): Promise<CustomerIn
 
 export async function resetRevenueCatUser(): Promise<void> {
   if (!configured) return;
+  trialEligibilityCache.clear();
   try {
     await Purchases.logOut();
   } catch (err) {
@@ -97,6 +101,110 @@ export async function invalidateCustomerInfoCache(): Promise<void> {
   } catch (err) {
     if (__DEV__) console.warn('[RevenueCat] invalidateCustomerInfoCache failed', err);
   }
+}
+
+// Length of the product's free trial in days, or null if it has none. Read from
+// the store product so the paywall can't drift from what's configured in App
+// Store Connect / Play Console. Says nothing about whether THIS user can still
+// get it — see checkTrialEligibility.
+export function freeTrialDays(product: PurchasesStoreProduct): number | null {
+  let unit: string;
+  let count: number;
+  if (Platform.OS === 'android') {
+    const period = product.defaultOption?.freePhase?.billingPeriod;
+    if (!period) return null;
+    unit = period.unit;
+    count = period.value;
+  } else {
+    const intro = product.introPrice;
+    if (!intro || intro.price !== 0) return null;
+    unit = intro.periodUnit;
+    count = intro.periodNumberOfUnits * Math.max(intro.cycles, 1);
+  }
+  if (count <= 0) return null;
+
+  switch (unit) {
+    case 'DAY':
+      return count;
+    case 'WEEK':
+      return count * 7;
+    case 'MONTH':
+    case 'YEAR': {
+      const start = new Date();
+      const end = new Date(start);
+      if (unit === 'MONTH') end.setMonth(end.getMonth() + count);
+      else end.setFullYear(end.getFullYear() + count);
+      return Math.round((end.getTime() - start.getTime()) / 86_400_000);
+    }
+    default:
+      return null;
+  }
+}
+
+// productId -> can this customer start the product's free trial. Cleared when
+// the RevenueCat user changes. Lets the paywall render the right CTA on first
+// paint once the subscription provider has warmed it.
+const trialEligibilityCache = new Map<string, boolean>();
+
+export function peekTrialEligibility(productIds: string[]): Record<string, boolean> | null {
+  const result: Record<string, boolean> = {};
+  for (const id of productIds) {
+    const cached = trialEligibilityCache.get(id);
+    if (cached === undefined) return null;
+    result[id] = cached;
+  }
+  return result;
+}
+
+// Whether the customer can still start each product's free trial. Apple gives
+// one trial per Apple ID per subscription group; a resubscriber (or a reviewer
+// retesting on a used sandbox account) is charged immediately, so the paywall
+// must not promise "free" to them. Anything short of a definite ELIGIBLE —
+// UNKNOWN, an error, no trial on the product — counts as not eligible, per
+// RevenueCat's guidance to show regular pricing when unsure.
+export async function checkTrialEligibility(
+  products: PurchasesStoreProduct[],
+): Promise<Record<string, boolean>> {
+  const result: Record<string, boolean> = {};
+  const toCheck: string[] = [];
+  for (const product of products) {
+    const id = product.identifier;
+    const cached = trialEligibilityCache.get(id);
+    if (cached !== undefined) {
+      result[id] = cached;
+    } else if (freeTrialDays(product) === null) {
+      result[id] = false;
+    } else if (Platform.OS === 'android') {
+      // RevenueCat always reports UNKNOWN on Android. Play only returns offers
+      // the user qualifies for, so a free phase on the product means eligible.
+      result[id] = true;
+    } else {
+      toCheck.push(id);
+    }
+  }
+
+  if (toCheck.length > 0 && configured) {
+    try {
+      const statuses = await Purchases.checkTrialOrIntroductoryPriceEligibility(toCheck);
+      for (const id of toCheck) {
+        result[id] =
+          statuses[id]?.status === INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE;
+      }
+    } catch (err) {
+      if (__DEV__) console.warn('[RevenueCat] trial eligibility check failed', err);
+      // Not cached, so the next paywall visit retries.
+      for (const id of toCheck) result[id] = false;
+      return result;
+    }
+  } else if (toCheck.length > 0) {
+    for (const id of toCheck) result[id] = false;
+    return result;
+  }
+
+  for (const product of products) {
+    trialEligibilityCache.set(product.identifier, result[product.identifier]);
+  }
+  return result;
 }
 
 export type PurchaseOutcome =

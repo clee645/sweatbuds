@@ -16,6 +16,7 @@ import Purchases, {
 
 import { useAuth } from './auth';
 import {
+  checkTrialEligibility,
   getCurrentOffering,
   getCustomerInfo,
   hasProEntitlement,
@@ -75,6 +76,14 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       if (!mountedRef.current) return info;
       setCustomerInfo(info);
       setOffering(current);
+      // Warm the trial-eligibility cache so the paywall shows the right CTA
+      // on first paint instead of flipping once the check lands.
+      if (current) {
+        const products = [current.monthly, current.annual]
+          .filter((p) => p !== null)
+          .map((p) => p.product);
+        void checkTrialEligibility(products);
+      }
       return info;
     } catch (err) {
       // Both helpers swallow their own errors, so this is belt-and-suspenders.

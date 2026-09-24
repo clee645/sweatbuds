@@ -5,8 +5,6 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { colors, gradients, spacing } from '@/lib/theme';
 
-type Plan = 'monthly' | 'yearly';
-
 type Step = {
   renderIcon: (color: string) => ReactNode;
   title: string;
@@ -23,14 +21,13 @@ function formatDate(date: Date): string {
   });
 }
 
-function buildSteps(plan: Plan): Step[] {
-  const trialDays = plan === 'yearly' ? 7 : 0;
-  const reminderDays = plan === 'yearly' ? 5 : 0;
+function buildSteps(trialDays: number): Step[] {
+  const reminderDays = trialDays > 2 ? trialDays - 2 : 0;
   const billingDate = new Date();
   billingDate.setDate(billingDate.getDate() + trialDays);
 
   const chargeLine =
-    plan === 'yearly'
+    trialDays > 0
       ? `You'll be charged on ${formatDate(billingDate)} unless you cancel anytime before.`
       : `You'll be charged today unless you cancel anytime before.`;
 
@@ -55,9 +52,10 @@ function buildSteps(plan: Plan): Step[] {
 
 // Vertical 3-step trial timeline shown on the paywall. The first step's badge is
 // a filled red gradient; the rest are red-outlined rings. Step labels shift
-// depending on whether the monthly or yearly (7-day-trial) plan is selected.
-export function TrialTimeline({ plan }: { plan: Plan }) {
-  const steps = buildSteps(plan);
+// with the selected plan's free trial: `trialDays` is its length, or null when
+// the plan has no trial or the customer has already used theirs (billed today).
+export function TrialTimeline({ trialDays }: { trialDays: number | null }) {
+  const steps = buildSteps(trialDays ?? 0);
 
   return (
     <View style={styles.wrap}>
