@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
-import { setPendingPhotoUri } from '@/lib/onboarding';
+import { clearPendingPhotoUri, setPendingPhotoUri } from '@/lib/onboarding';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
 // Onboarding setup screen — pick a profile photo.
@@ -41,13 +41,25 @@ export default function ProfilePicScreen() {
     }
   };
 
-  const handleContinue = async () => {
-    if (!photoUri) return;
-    await setPendingPhotoUri(photoUri);
+  const goNext = () => {
     // Invitees (flow=join) skip the initiator's plan/wager/commitment setup —
     // those terms belong to their partner. Straight to account creation; they
     // review & sign the shared terms after pairing (join-confirm).
     router.push(flow === 'join' ? '/onboarding/save-progress' : '/onboarding/sign-commitment');
+  };
+
+  const handleContinue = async () => {
+    if (!photoUri) return;
+    await setPendingPhotoUri(photoUri);
+    goNext();
+  };
+
+  // The photo is optional — someone who denies photo access must still be able
+  // to finish onboarding. Clear any photo left pending from an earlier run so
+  // it isn't applied after they chose to skip.
+  const handleSkip = async () => {
+    await clearPendingPhotoUri();
+    goNext();
   };
 
   return (
@@ -78,6 +90,9 @@ export default function ProfilePicScreen() {
 
       <View style={styles.footer}>
         <OnboardingButton label="Continue" disabled={!photoUri} onPress={handleContinue} />
+        <Pressable onPress={handleSkip} hitSlop={8}>
+          <Text style={styles.skip}>Skip for now</Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -139,5 +154,12 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  skip: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
