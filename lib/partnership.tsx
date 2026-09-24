@@ -124,6 +124,11 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       .from('partnerships')
       .select(SELECT_COLUMNS)
       .or(`user_a.eq.${uid},user_b.eq.${uid}`)
+      // Ended rows are history, not the current partnership. `status` is text,
+      // so ordering alone sorted 'ended' ahead of 'pending' and a user who
+      // unpaired kept loading the dead row (whose writes the DB now rejects).
+      // With ended excluded, ascending order puts 'active' before 'pending'.
+      .neq('status', 'ended')
       .order('status', { ascending: true })
       .order('created_at', { ascending: false })
       .limit(1)
