@@ -38,9 +38,9 @@ export function DrawerContent(props: DrawerContentComponentProps) {
   const handleSupport = async () => {
     props.navigation.closeDrawer();
     try {
-      await Linking.openURL('mailto:support@sweatbuds.com');
+      await Linking.openURL('https://discord.gg/ETnxDKjm4Z');
     } catch {
-      Alert.alert('No email app found', 'Please email support@sweatbuds.com.');
+      Alert.alert('Could not open link', 'Join us on Discord at discord.gg/ETnxDKjm4Z.');
     }
   };
 
