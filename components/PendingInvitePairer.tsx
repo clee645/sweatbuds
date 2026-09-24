@@ -5,7 +5,7 @@ import { Alert } from 'react-native';
 import { useAuth } from '@/lib/auth';
 import { isNetworkError, toUserMessage } from '@/lib/errors';
 import { captureException } from '@/lib/reporting';
-import { pairWithCode } from '@/lib/invite';
+import { pairWithCode, SubscriptionRequiredError } from '@/lib/invite';
 import { clearPendingInviteCode, getPendingInviteCode } from '@/lib/onboarding';
 import { usePartnership } from '@/lib/partnership';
 import { waitForProfileReady } from '@/lib/profileReady';
@@ -13,17 +13,25 @@ import { supabase } from '@/lib/supabase';
 
 // Redeems an invite code that was entered during onboarding (before sign-in).
 // Pairing needs a Supabase session, so the invite-code screen stashes the code
-// and this component redeems it once the user is authenticated. Runs at most
-// once per mount; renders nothing.
+// and this component redeems it once the user is authenticated. Runs once per
+// user, plus once more when they become Pro — an invitee whose partner hasn't
+// subscribed is refused until someone pays, and the paywall follows right
+// after, so the kept code is retried the moment their subscription lands.
+// Renders nothing.
 export function PendingInvitePairer() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { refresh } = usePartnership();
-  const attempted = useRef(false);
+  // profiles.is_pro, not RevenueCat's isPro: it's the flag redeem_invite_code
+  // checks, so retrying on it can't race the server-side subscription sync.
+  const isPro = profile?.is_pro === true;
+  const attemptedFor = useRef<string | null>(null);
 
   useEffect(() => {
     const userId = user?.id;
-    if (!userId || attempted.current) return;
-    attempted.current = true;
+    if (!userId) return;
+    const attemptKey = `${userId}:${isPro}`;
+    if (attemptedFor.current === attemptKey) return;
+    attemptedFor.current = attemptKey;
 
     let cancelled = false;
     (async () => {
@@ -61,11 +69,17 @@ export function PendingInvitePairer() {
           params: partnerName ? { name: partnerName } : undefined,
         });
       } catch (e) {
-        // The stashed code is single-use, so a *server* rejection means it can
-        // never succeed — drop it rather than retry-loop. A network failure is
-        // different: the code was never consumed, and clearing it here used to
-        // permanently lose the invite on a flaky first launch, forcing the user
-        // to re-enter it by hand. Keep it and let the next mount retry.
+        // Neither partner is subscribed yet. Keep the code and stay quiet: the
+        // paywall comes next and says one subscription covers both, and the
+        // isPro retry above pairs them as soon as they pay.
+        if (e instanceof SubscriptionRequiredError) return;
+
+        // The stashed code is single-use, so any other *server* rejection
+        // means it can never succeed — drop it rather than retry-loop. A
+        // network failure is different: the code was never consumed, and
+        // clearing it here used to permanently lose the invite on a flaky
+        // first launch, forcing the user to re-enter it by hand. Keep it and
+        // let the next mount retry.
         if (!isNetworkError(e)) {
           await clearPendingInviteCode();
         }
@@ -77,7 +91,7 @@ export function PendingInvitePairer() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, refresh]);
+  }, [user?.id, isPro, refresh]);
 
   return null;
 }

@@ -102,6 +102,16 @@ export async function checkInviteCode(rawCode: string): Promise<InviteCodeCheck>
   return { ok: true };
 }
 
+// Pairing was refused only because neither partner is subscribed yet. Unlike
+// the other redemption errors this isn't final: the same code works once one of
+// them subscribes, so callers holding a stashed code should keep it.
+export class SubscriptionRequiredError extends Error {
+  constructor() {
+    super('A subscription is required to pair. Subscribe to unlock Sweatbuds for both of you.');
+    this.name = 'SubscriptionRequiredError';
+  }
+}
+
 // Redemption goes through a SECURITY DEFINER RPC because the partnerships
 // SELECT/UPDATE RLS policies require the caller to already be a member —
 // which the joining user isn't yet. The function does the lookup, validation,
@@ -124,9 +134,7 @@ export async function pairWithCode(rawCode: string): Promise<Partnership> {
       throw new Error('Code not found or already redeemed.');
     }
     if (error.code === 'P0004') {
-      throw new Error(
-        'A subscription is required to pair. Subscribe to unlock Sweatbuds for both of you.',
-      );
+      throw new SubscriptionRequiredError();
     }
     throw error;
   }
