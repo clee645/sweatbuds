@@ -121,7 +121,11 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
   const userId = user?.id ?? null;
   // Re-fetch when the partnership identity changes — pairing flips RLS
   // visibility, so rows from the new partner suddenly become readable.
-  const partnershipKey = partnership?.id ?? null;
+  // Only an ACTIVE partnership scopes the feed — log-workout stamps
+  // partnership_id only when active, so scoping by a pending row's id hid
+  // every workout an unpaired user logged. Pending → active also changes the
+  // key, which triggers the re-fetch on pairing.
+  const partnershipKey = partnership?.status === 'active' ? partnership.id : null;
 
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
