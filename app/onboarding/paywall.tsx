@@ -180,6 +180,10 @@ export default function PaywallScreen() {
           plan,
           source: 'custom_paywall',
         });
+        // Like restore: pull the new entitlement into context before leaving,
+        // rather than trusting the background CustomerInfo listener to land
+        // first — otherwise a just-paid user can hit LockedHome.
+        await refresh();
         await finishPaywall();
       } else if (result.kind === 'error') {
         setError(result.message);
@@ -203,6 +207,7 @@ export default function PaywallScreen() {
             source: 'revenuecat_paywall',
           });
         }
+        await refresh();
         await finishPaywall();
       }
     } catch (err) {
