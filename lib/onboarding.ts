@@ -140,6 +140,41 @@ export async function clearPendingInviteCode(): Promise<void> {
   }
 }
 
+// Set when a stashed invite code was refused because neither partner has
+// subscribed yet (redeem_invite_code's P0004). The code is kept and retried, so
+// this is what lets the locked home say "waiting to pair with your partner"
+// instead of telling a user who already entered a code to go find a partner.
+const PENDING_INVITE_BLOCKED_KEY = 'sweatbuds:pendingInviteBlocked';
+
+const blockedListeners = new Set<(value: boolean) => void>();
+
+export async function setPendingInviteBlocked(value: boolean): Promise<void> {
+  try {
+    if (value) await AsyncStorage.setItem(PENDING_INVITE_BLOCKED_KEY, 'true');
+    else await AsyncStorage.removeItem(PENDING_INVITE_BLOCKED_KEY);
+  } catch {
+    // Best-effort.
+  }
+  for (const listener of blockedListeners) listener(value);
+}
+
+export async function getPendingInviteBlocked(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(PENDING_INVITE_BLOCKED_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function subscribePendingInviteBlocked(
+  listener: (value: boolean) => void,
+): () => void {
+  blockedListeners.add(listener);
+  return () => {
+    blockedListeners.delete(listener);
+  };
+}
+
 // Workout-days target picked during onboarding. Stashed here, then applied to
 // the user's partnership row at sign-up by PendingInviteRegistrar.
 const PENDING_WORKOUT_DAYS_KEY = 'sweatbuds:pendingWorkoutDays';

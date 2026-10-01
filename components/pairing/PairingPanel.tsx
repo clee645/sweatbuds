@@ -1,4 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,7 +20,9 @@ import {
   normalizeCode,
   pairWithCode,
   sharePartnerInvite,
+  SubscriptionRequiredError,
 } from '@/lib/invite';
+import { getPendingInviteCode } from '@/lib/onboarding';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -42,6 +45,19 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
   const [ownCode, setOwnCode] = useState<string | null>(null);
   const [ownCodeLoading, setOwnCodeLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+
+  // An invitee who entered a code during onboarding but couldn't pair yet (no
+  // subscription on either side) still has it stashed. Prefill it rather than
+  // making them dig the code out of their messages again.
+  useEffect(() => {
+    let cancelled = false;
+    void getPendingInviteCode().then((code) => {
+      if (!cancelled && code) setInput((prev) => prev || formatCode(code));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +106,18 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
       }
       await onPaired(partnerName);
     } catch (e) {
+      // "Nobody has subscribed yet" is the one failure with an obvious next
+      // step, and this screen has no subscribe affordance of its own.
+      if (e instanceof SubscriptionRequiredError) {
+        Alert.alert('One of you needs a subscription', e.message, [
+          { text: 'Not now', style: 'cancel' },
+          {
+            text: 'Subscribe',
+            onPress: () => router.push('/onboarding/paywall-intro'),
+          },
+        ]);
+        return;
+      }
       captureException(e, { operation: 'pairing_confirm' });
       const message = toUserMessage(e);
       Alert.alert('Could not pair', message);

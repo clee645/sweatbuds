@@ -24,6 +24,7 @@ import { useWeekRollover } from '@/lib/useWeekRollover';
 import { DEFAULT_WAGER, type WagerRule } from '@/lib/wagers';
 import {
   getPairedAnchor,
+  getSoloWeekWindow,
   getWeekWindow,
   partnershipWeekStreak,
   weekProgressFromWorkouts,
@@ -70,19 +71,28 @@ export default function HomeScreen() {
   );
 
   const paidAnchor = getPairedAnchor(partnership, weekTimezone);
-  const weekWindow = isPaired ? getWeekWindow(partnership, weekTimezone) : null;
+  // A solo (subscribed, not yet paired) user still has a week to fill, and
+  // weekProgressFromWorkouts counts nothing without a window — which showed
+  // them "0 of N" forever while the carousel, success screen and widget all
+  // counted the same workouts. Same fallback those two already use.
+  const weekWindow =
+    (isPaired ? getWeekWindow(partnership, weekTimezone) : null) ??
+    getSoloWeekWindow(weekTimezone);
   const weekStart = weekWindow?.weekStart ?? null;
   const weekEnd = weekWindow?.weekEnd ?? null;
 
   const thisWeekWorkouts = useMemo(() => {
-    if (!weekStart || !weekEnd || !paidAnchor) return [];
+    if (!weekStart || !weekEnd) return [];
     const weekStartMs = weekStart.getTime();
     const weekEndMs = weekEnd.getTime();
-    const anchorMs = paidAnchor.getTime();
+    // Pre-pairing workouts are excluded from a PAIRED week (the ledger starts
+    // at paired_at). A solo user has no such anchor — everything in their own
+    // week counts, which is what the header pill reports.
+    const anchorMs = paidAnchor?.getTime() ?? null;
     return workouts.filter((w) => {
       const t = new Date(w.logged_at).getTime();
       if (Number.isNaN(t)) return false;
-      if (t < anchorMs) return false;
+      if (anchorMs !== null && t < anchorMs) return false;
       return t >= weekStartMs && t < weekEndMs;
     });
     // paidAnchor / weekStart / weekEnd are recomputed each render as new

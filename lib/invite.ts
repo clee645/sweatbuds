@@ -66,7 +66,12 @@ export async function sharePartnerInvite(userId: string): Promise<void> {
   await Share.share({ message });
 }
 
-export type InviteCodeCheck = { ok: true } | { ok: false; message: string };
+export type InviteCodeCheck =
+  // `note` is advisory: the code is real, but nobody has subscribed yet, so
+  // redeeming it will be refused until one of them does. The screen shows it
+  // and still lets the user continue.
+  | { ok: true; note?: string }
+  | { ok: false; message: string };
 
 // Pre-flight check for the onboarding code screen, run before the user has an
 // account. Advisory only: an `ok` here can still lose the race to another
@@ -97,6 +102,12 @@ export async function checkInviteCode(rawCode: string): Promise<InviteCodeCheck>
     return {
       ok: false,
       message: 'That code was not found or has already been used. Double-check it with your partner.',
+    };
+  }
+  if (data === 'needs_subscription') {
+    return {
+      ok: true,
+      note: "Your partner hasn't subscribed yet. One of you will need a subscription to pair — whoever subscribes unlocks Sweatbuds for both of you.",
     };
   }
   return { ok: true };

@@ -18,12 +18,15 @@ export default function InviteCodeScreen() {
   const [code, setCode] = useState('');
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const complete = isCompleteCode(code);
 
   const handleChange = (raw: string) => {
     setCode(formatCode(normalizeCode(raw)));
     if (error) setError(null);
+    // A different code may not carry the same warning.
+    if (notice) setNotice(null);
   };
 
   const handleConnect = async () => {
@@ -39,6 +42,13 @@ export default function InviteCodeScreen() {
       const result = await checkInviteCode(code);
       if (!result.ok) {
         setError(result.message);
+        return;
+      }
+      // Valid code, but nobody has paid yet: say so here — before they build an
+      // account — rather than letting pairing fail silently after sign-up. One
+      // more tap continues.
+      if (result.note && notice !== result.note) {
+        setNotice(result.note);
         return;
       }
       // Stash the code; PendingInvitePairer redeems it after sign-in. Collect
@@ -80,9 +90,12 @@ export default function InviteCodeScreen() {
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {!error && notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
         <OnboardingButton
-          label={checking ? 'Checking…' : 'Connect with partner'}
+          label={
+            checking ? 'Checking…' : notice ? 'Continue anyway' : 'Connect with partner'
+          }
           variant="accent"
           disabled={!complete || checking}
           onPress={handleConnect}
@@ -129,6 +142,14 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textAlign: 'center',
     padding: 0,
+  },
+  notice: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: -spacing.sm,
   },
   error: {
     ...typography.caption,

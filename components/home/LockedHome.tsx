@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DrawerActions } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useNavigation } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +19,10 @@ import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
 import { captureException } from '@/lib/reporting';
 import { sharePartnerInvite } from '@/lib/invite';
+import {
+  getPendingInviteBlocked,
+  subscribePendingInviteBlocked,
+} from '@/lib/onboarding';
 import { hasProEntitlement, restorePurchases } from '@/lib/revenuecat';
 import { useSubscription } from '@/lib/subscription';
 import { colors, radii, spacing, typography } from '@/lib/theme';
@@ -32,6 +36,21 @@ export function LockedHome() {
   const { refresh: refreshSubscription } = useSubscription();
 
   const [restoring, setRestoring] = useState(false);
+  // True when this user already entered their partner's code and pairing is
+  // only waiting on a subscription (PendingInvitePairer keeps retrying).
+  const [awaitingPair, setAwaitingPair] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getPendingInviteBlocked().then((v) => {
+      if (!cancelled) setAwaitingPair(v);
+    });
+    const unsubscribe = subscribePendingInviteBlocked(setAwaitingPair);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   // Invite Partner → native share sheet, identical to the Partner tab's
   // "Share code with partner" action.
@@ -102,9 +121,13 @@ export function LockedHome() {
         <View style={styles.iconCircle}>
           <Ionicons name="barbell" size={32} color={colors.accent} />
         </View>
-        <Text style={styles.title}>Start Your Journey</Text>
+        <Text style={styles.title}>
+          {awaitingPair ? 'Almost there' : 'Start Your Journey'}
+        </Text>
         <Text style={styles.subtitle}>
-          Subscribe to unlock Sweatbuds, or invite{'\n'}your partner to subscribe.
+          {awaitingPair
+            ? "You're ready to team up with your partner. One of you needs a subscription — whoever subscribes unlocks Sweatbuds for both of you."
+            : `Subscribe to unlock Sweatbuds, or invite\nyour partner to subscribe.`}
         </Text>
 
         <View style={styles.actions}>
@@ -115,23 +138,31 @@ export function LockedHome() {
             <Text style={styles.subscribeBtnText}>Subscribe</Text>
           </Pressable>
 
-          <Pressable
-            onPress={openInvite}
-            style={({ pressed }) => [styles.inviteBtn, pressed && styles.pressed]}
-          >
-            <Ionicons name="person-add-outline" size={18} color={colors.text} />
-            <Text style={styles.inviteBtnText}>Invite Partner</Text>
-          </Pressable>
+          {awaitingPair ? (
+            <Text style={styles.waitingNote}>
+              We&apos;ll connect you automatically once either of you subscribes.
+            </Text>
+          ) : (
+            <>
+              <Pressable
+                onPress={openInvite}
+                style={({ pressed }) => [styles.inviteBtn, pressed && styles.pressed]}
+              >
+                <Ionicons name="person-add-outline" size={18} color={colors.text} />
+                <Text style={styles.inviteBtnText}>Invite Partner</Text>
+              </Pressable>
 
-          <View style={styles.orRow}>
-            <View style={styles.orLine} />
-            <Text style={styles.orText}>or</Text>
-            <View style={styles.orLine} />
-          </View>
+              <View style={styles.orRow}>
+                <View style={styles.orLine} />
+                <Text style={styles.orText}>or</Text>
+                <View style={styles.orLine} />
+              </View>
 
-          <Pressable onPress={openEnterCode} hitSlop={8} style={styles.enterCodeWrap}>
-            <Text style={styles.enterCodeText}>Enter an invite code to pair</Text>
-          </Pressable>
+              <Pressable onPress={openEnterCode} hitSlop={8} style={styles.enterCodeWrap}>
+                <Text style={styles.enterCodeText}>Enter an invite code to pair</Text>
+              </Pressable>
+            </>
+          )}
         </View>
       </View>
 
@@ -286,6 +317,13 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontSize: 13,
     color: colors.textMuted,
+  },
+  waitingNote: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
   },
   legalRow: {
     flexDirection: 'row',
