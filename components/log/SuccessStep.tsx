@@ -41,7 +41,9 @@ export function SuccessStep({
     allWorkouts,
     user,
     weekTimezone,
-    3,
+    // The couple's real goal — a hardcoded 3 showed "2/3" here and "2/5" on
+    // home for anyone on a different target.
+    partnership?.weekly_target ?? 3,
     weekWindow.weekStart,
     weekWindow.weekEnd,
   );

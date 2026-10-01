@@ -27,6 +27,10 @@ import { supabase } from './supabase';
 import { clearWidget } from './widget';
 import type { Profile } from '@/types/db';
 
+// Longest the app holds the branded splash while the session resolves. Matches
+// the subscription provider's watchdog in spirit: settle, then correct.
+const AUTH_SETTLE_MS = 8000;
+
 const IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
@@ -104,26 +108,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      const cached = data.session;
-      // getSession() only reads local storage, so a user deleted or banned
-      // out-of-band (e.g. from the dashboard) still looks signed in and lands on
-      // a stale "ghost" home. getUser() makes a network round-trip GoTrue rejects
-      // (401/403) when the user no longer exists — bounce them to sign-in. Any
-      // other error (offline / transient / 5xx) keeps the cached session so we
-      // never sign out a valid user who simply has no connection.
-      if (cached) {
-        const { error } = await supabase.auth.getUser();
-        if (error && (error.status === 401 || error.status === 403)) {
-          await supabase.auth.signOut();
-          setSession(null);
-          setLoading(false);
-          return;
-        }
-      }
-      setSession(cached);
+    let settled = false;
+    const settle = (next: Session | null) => {
+      if (settled) return;
+      settled = true;
+      setSession(next);
       setLoading(false);
+    };
+
+    // Watchdog: AuthGate holds BrandedSplash (a static image, no spinner) while
+    // this resolves, so a getSession/getUser call that never returns reads as a
+    // frozen app that a relaunch can't fix. Settle on the cached session and
+    // let onAuthStateChange correct it if the real answer arrives late.
+    const timer = setTimeout(() => {
+      if (!settled) {
+        captureException(new Error('Auth bootstrap timed out'), {
+          operation: 'auth_bootstrap',
+        });
+        settled = true;
+        setLoading(false);
+      }
+    }, AUTH_SETTLE_MS);
+
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const cached = data.session;
+        // getSession() only reads local storage, so a user deleted or banned
+        // out-of-band (e.g. from the dashboard) still looks signed in and lands on
+        // a stale "ghost" home. getUser() makes a network round-trip GoTrue rejects
+        // (401/403) when the user no longer exists — bounce them to sign-in. Any
+        // other error (offline / transient / 5xx) keeps the cached session so we
+        // never sign out a valid user who simply has no connection.
+        if (cached) {
+          const { error } = await supabase.auth.getUser();
+          if (error && (error.status === 401 || error.status === 403)) {
+            await supabase.auth.signOut();
+            settle(null);
+            return;
+          }
+        }
+        settle(cached);
+      } catch (e) {
+        // Storage unavailable, a throwing auth client, anything: signed out is
+        // the recoverable answer (sign-in still works), a frozen splash isn't.
+        captureException(e, { operation: 'auth_bootstrap' });
+        settle(null);
+      } finally {
+        clearTimeout(timer);
+      }
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
@@ -131,6 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
+      clearTimeout(timer);
       sub.subscription.unsubscribe();
     };
   }, []);

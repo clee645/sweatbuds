@@ -16,7 +16,7 @@ const TOGGLE_HEIGHT = 44;
 export default function HistoryScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { workouts, loading } = useHistoryWorkouts();
+  const { workouts, loading, error, refresh } = useHistoryWorkouts();
   const [view, setView] = useState<HistoryView>('weekly');
 
   const goBack = () => {
@@ -46,6 +46,15 @@ export default function HistoryScreen() {
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={colors.textMuted} />
+          </View>
+        ) : error && workouts.length === 0 ? (
+          // Without this the empty-state copy ("No weeks yet") claimed a
+          // long-time user had no history whenever the fetch failed.
+          <View style={styles.loadingWrap}>
+            <Text style={styles.error}>{error}</Text>
+            <Pressable onPress={() => void refresh()} hitSlop={8}>
+              <Text style={styles.retry}>Try again</Text>
+            </Pressable>
           </View>
         ) : view === 'weekly' ? (
           <WeeklyView workouts={workouts} bottomPad={togglePad} />
@@ -77,6 +86,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: { ...typography.bodyStrong, fontSize: 18 },
+  error: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  retry: {
+    ...typography.bodyStrong,
+    color: colors.accent,
+    marginTop: spacing.md,
+  },
   body: {
     flex: 1,
   },

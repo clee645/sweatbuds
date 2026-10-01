@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useNavigation } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -23,6 +24,7 @@ import {
   partnershipWeekGoalHit,
 } from '@/lib/historyWeek';
 import { usePartnership } from '@/lib/partnership';
+import { toUserMessage } from '@/lib/errors';
 import { captureException } from '@/lib/reporting';
 import { supabase } from '@/lib/supabase';
 import { colors, gradients, radii, spacing, typography } from '@/lib/theme';
@@ -43,6 +45,8 @@ export default function WagerBalanceScreen() {
   const [wagers, setWagers] = useState<DisplayWager[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [celebrating, setCelebrating] = useState<DisplayWager | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const flatListRef = useRef<FlatList<DisplayWager>>(null);
 
   const userId = user?.id ?? null;
@@ -52,15 +56,25 @@ export default function WagerBalanceScreen() {
     if (!partnershipId || !userId) {
       setWagers([]);
       setActiveIndex(0);
+      setLoading(false);
       return;
     }
-    const { data } = await supabase
+    setLoadError(null);
+    const { data, error } = await supabase
       .from('wagers')
       .select('id, terms, status, winner_user_id, week_start')
       .eq('partnership_id', partnershipId)
       .in('status', ['won', 'lost'])
       .not('winner_user_id', 'is', null)
       .order('week_start', { ascending: false });
+    // A dropped query used to land on "All caught up!" — telling someone they
+    // owe nothing when the debts simply didn't load.
+    if (error) {
+      captureException(error, { operation: 'wagers_load' });
+      setLoadError(toUserMessage(error, 'Could not load your wagers.'));
+      setLoading(false);
+      return;
+    }
     setWagers(
       (data ?? []).map((w) => ({
         id: w.id as string,
@@ -69,6 +83,7 @@ export default function WagerBalanceScreen() {
       })),
     );
     setActiveIndex(0);
+    setLoading(false);
   }, [partnershipId, userId]);
 
   // Reload each time the screen gains focus so a background settlement pass
@@ -229,7 +244,18 @@ export default function WagerBalanceScreen() {
 
       <View style={styles.spacer} />
 
-      {isEmpty ? (
+      {loading ? (
+        <View style={styles.emptyWrap}>
+          <ActivityIndicator color={colors.textMuted} />
+        </View>
+      ) : loadError ? (
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptySubtext}>{loadError}</Text>
+          <Pressable onPress={() => void load()} hitSlop={8}>
+            <Text style={styles.retryText}>Try again</Text>
+          </Pressable>
+        </View>
+      ) : isEmpty ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>{emptyState.title}</Text>
           {emptyState.subtitle ? (
@@ -393,6 +419,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  retryText: {
+    ...typography.bodyStrong,
+    color: colors.accent,
+    fontSize: 15,
+    marginTop: spacing.md,
   },
   emptySubtext: {
     ...typography.body,
