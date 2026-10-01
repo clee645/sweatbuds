@@ -18,6 +18,12 @@ import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
 import { captureException } from '@/lib/reporting';
 import { unpairPartnership } from '@/lib/invite';
+import { setJoinFlowActive } from '@/lib/joinFlow';
+import {
+  clearPendingInviteCode,
+  setPaywallSeen,
+  setPendingInviteBlocked,
+} from '@/lib/onboarding';
 import { usePartnership } from '@/lib/partnership';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import { useWorkouts } from '@/lib/workouts';
@@ -64,6 +70,15 @@ export default function PartnerScreen() {
             userId={user?.id ?? null}
             fillToShare
             onPaired={async (partnerName) => {
+              // This path pairs without going through PendingInvitePairer, so
+              // clear the stash here too: a leftover code is retried on the
+              // next foreground and used to pop "You're already paired" at
+              // someone who had just paired. The flag also silences the
+              // root toast, which reads backwards for the person who joined.
+              setJoinFlowActive(true);
+              await clearPendingInviteCode();
+              await setPendingInviteBlocked(false);
+              await setPaywallSeen();
               await refreshPartnership();
               await refreshWorkouts();
               router.replace({

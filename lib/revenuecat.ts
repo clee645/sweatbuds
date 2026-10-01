@@ -63,27 +63,31 @@ export async function resetRevenueCatUser(): Promise<void> {
   }
 }
 
-export async function getCurrentOffering(): Promise<PurchasesOffering | null> {
-  if (!configured) return null;
+// `undefined` means "couldn't fetch" and `null` means "fetched, nothing there".
+// Callers MUST keep their previous value on undefined: collapsing the two is
+// what let a flaky network right after a purchase overwrite a live entitlement
+// with nothing and drop the buyer onto the locked home.
+export async function getCurrentOffering(): Promise<PurchasesOffering | null | undefined> {
+  if (!configured) return undefined;
   try {
     const offerings = await Purchases.getOfferings();
     return offerings.current ?? null;
   } catch (err) {
-    // Offline or RC hiccup. Returning null keeps the subscription provider
-    // resolvable — an unhandled rejection here used to leave `loading` true
-    // forever and strand the app on the splash screen.
+    // Offline or RC hiccup. Resolving (rather than rejecting) keeps the
+    // subscription provider settling — an unhandled rejection here used to
+    // leave `loading` true forever and strand the app on the splash screen.
     if (__DEV__) console.warn('[RevenueCat] getOfferings failed', err);
-    return null;
+    return undefined;
   }
 }
 
-export async function getCustomerInfo(): Promise<CustomerInfo | null> {
-  if (!configured) return null;
+export async function getCustomerInfo(): Promise<CustomerInfo | null | undefined> {
+  if (!configured) return undefined;
   try {
     return await Purchases.getCustomerInfo();
   } catch (err) {
     if (__DEV__) console.warn('[RevenueCat] getCustomerInfo failed', err);
-    return null;
+    return undefined;
   }
 }
 
@@ -146,6 +150,17 @@ export function freeTrialDays(product: PurchasesStoreProduct): number | null {
 // paint once the subscription provider has warmed it.
 const trialEligibilityCache = new Map<string, boolean>();
 
+const ELIGIBILITY_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('timed out')), ms),
+    ),
+  ]);
+}
+
 export function peekTrialEligibility(productIds: string[]): Record<string, boolean> | null {
   const result: Record<string, boolean> = {};
   for (const id of productIds) {
@@ -185,11 +200,28 @@ export async function checkTrialEligibility(
 
   if (toCheck.length > 0 && configured) {
     try {
-      const statuses = await Purchases.checkTrialOrIntroductoryPriceEligibility(toCheck);
+      // Timed out on purpose: on iOS this triggers a StoreKit receipt refresh,
+      // which can hang indefinitely for a first-time buyer on a bad connection
+      // rather than reject. The answer only picks the paywall's wording, so a
+      // slow one must never hold up the purchase.
+      const statuses = await withTimeout(
+        Purchases.checkTrialOrIntroductoryPriceEligibility(toCheck),
+        ELIGIBILITY_TIMEOUT_MS,
+      );
       for (const id of toCheck) {
-        result[id] =
-          statuses[id]?.status === INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE;
+        const status = statuses[id]?.status;
+        result[id] = status === INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE;
+        // Only remember a definite answer. UNKNOWN (an unreadable receipt)
+        // used to be cached as "not eligible" for the whole session, so one
+        // hiccup hid the free trial from someone who qualified for it.
+        if (
+          status === INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE ||
+          status === INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_INELIGIBLE
+        ) {
+          trialEligibilityCache.set(id, result[id]);
+        }
       }
+      return result;
     } catch (err) {
       if (__DEV__) console.warn('[RevenueCat] trial eligibility check failed', err);
       // Not cached, so the next paywall visit retries.
@@ -215,6 +247,10 @@ export type PurchaseOutcome =
 export async function purchasePackage(pkg: PurchasesPackage): Promise<PurchaseOutcome> {
   try {
     const { customerInfo } = await Purchases.purchasePackage(pkg);
+    // Buying consumes the Apple-ID-wide intro offer for that subscription
+    // group, so every cached "eligible" is now stale — leaving it meant the
+    // other plan still advertised a free trial that would charge immediately.
+    trialEligibilityCache.clear();
     return { kind: 'success', customerInfo };
   } catch (err) {
     if (isUserCancelled(err)) return { kind: 'cancelled' };
@@ -225,6 +261,7 @@ export async function purchasePackage(pkg: PurchasesPackage): Promise<PurchaseOu
 export async function restorePurchases(): Promise<PurchaseOutcome> {
   try {
     const customerInfo = await Purchases.restorePurchases();
+    trialEligibilityCache.clear();
     return { kind: 'success', customerInfo };
   } catch (err) {
     if (isUserCancelled(err)) return { kind: 'cancelled' };

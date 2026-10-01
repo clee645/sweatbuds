@@ -121,13 +121,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // frozen app that a relaunch can't fix. Settle on the cached session and
     // let onAuthStateChange correct it if the real answer arrives late.
     const timer = setTimeout(() => {
-      if (!settled) {
-        captureException(new Error('Auth bootstrap timed out'), {
-          operation: 'auth_bootstrap',
-        });
-        settled = true;
-        setLoading(false);
-      }
+      if (settled) return;
+      captureException(new Error('Auth bootstrap timed out'), {
+        operation: 'auth_bootstrap',
+      });
+      // Deliberately does NOT mark this settled: stop holding the splash, but
+      // let the real answer still apply when it lands. Marking it settled here
+      // discarded the session permanently, so a slow token refresh looked like
+      // a surprise sign-out that only a relaunch could undo.
+      setLoading(false);
     }, AUTH_SETTLE_MS);
 
     (async () => {

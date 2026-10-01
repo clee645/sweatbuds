@@ -73,9 +73,11 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       // pre-change snapshot and the gate stays locked until a cold start.
       if (options?.force) await invalidateCustomerInfoCache();
       const [info, current] = await Promise.all([getCustomerInfo(), getCurrentOffering()]);
-      if (!mountedRef.current) return info;
-      setCustomerInfo(info);
-      setOffering(current);
+      if (!mountedRef.current) return info ?? null;
+      // undefined = the fetch failed; keep what we already know rather than
+      // reporting "not subscribed" to the access gate.
+      if (info !== undefined) setCustomerInfo(info);
+      if (current !== undefined) setOffering(current);
       // Warm the trial-eligibility cache so the paywall shows the right CTA
       // on first paint instead of flipping once the check lands.
       if (current) {
@@ -84,7 +86,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
           .map((p) => p.product);
         void checkTrialEligibility(products);
       }
-      return info;
+      return info ?? null;
     } catch (err) {
       // Both helpers swallow their own errors, so this is belt-and-suspenders.
       // The provider MUST settle regardless: `loading` gates useAccessGate,

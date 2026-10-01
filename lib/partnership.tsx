@@ -38,6 +38,12 @@ const SEEN_PAIRING_KEY = 'sweatbuds:lastSeenPairingId';
 // the survivor had notifications off and missed both the realtime event and push).
 const LAST_ACTIVE_PARTNERSHIP_KEY = 'sweatbuds:lastActivePartnershipId';
 
+// Durable mirror of "my partner's subscription covers me", the same idea as the
+// server-side profiles.is_pro bridge. Access for a covered user hangs entirely
+// on reading the partner's profile; when that read fails they would otherwise
+// be shown the locked screen despite being paid for.
+const PARTNER_COVERED_KEY = 'sweatbuds:partnerCovered';
+
 function generateInviteCode(): string {
   let out = '';
   for (let i = 0; i < CODE_LENGTH; i++) {
@@ -68,6 +74,9 @@ type PartnershipContextValue = {
   // devices agree no matter where they are.
   weekTimezone: string;
   loading: boolean;
+  // Last known "my partner pays for us", surviving a failed partner-profile
+  // read. Access only — never used for display.
+  partnerCovered: boolean;
   refresh: () => Promise<void>;
   update: (fields: PartnershipUpdateFields) => Promise<void>;
   setWeekStartDay: (day: number) => Promise<SetWeekStartDayResult>;
@@ -96,6 +105,19 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
   const [partnership, setPartnership] = useState<Partnership | null>(null);
   const [partner, setPartner] = useState<Profile | null>(null);
   const [anchorHistory, setAnchorHistory] = useState<PartnershipAnchorHistory[]>([]);
+  const [partnerCovered, setPartnerCovered] = useState(false);
+
+  // Hydrate the coverage flag before the first fetch resolves, so a cold start
+  // offline doesn't lock out a covered user on the way in.
+  useEffect(() => {
+    let cancelled = false;
+    void AsyncStorage.getItem(PARTNER_COVERED_KEY).then((v) => {
+      if (!cancelled && v === 'true') setPartnerCovered(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Stale-while-revalidate: `loading` flips to false after the first fetch
   // and stays false. Subsequent refreshes (foreground, realtime, push) update
   // partnership/partner state silently so the home screen doesn't flash to
@@ -139,7 +161,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchPartner = useCallback(
-    async (uid: string, p: Partnership | null): Promise<Profile | null> => {
+    async (uid: string, p: Partnership | null): Promise<Profile | null | undefined> => {
       if (!p || p.status !== 'active') return null;
       const partnerId = p.user_a === uid ? p.user_b : p.user_a;
       if (!partnerId) return null;
@@ -148,11 +170,13 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
         .select(PROFILE_COLUMNS)
         .eq('id', partnerId)
         .maybeSingle();
-      // A failed read is NOT "they have no partner" — it used to return null
-      // either way, which read as a half-loaded partnership and held home on
-      // the skeleton. Still returns null (callers have no better option), but
-      // the failure is now visible instead of silent.
-      if (error) captureException(error, { operation: 'partner_profile_load' });
+      // `undefined` = the read failed, which is NOT the same as "they have no
+      // partner". Collapsing the two is what let a flaky profile read strip a
+      // covered user's access.
+      if (error) {
+        captureException(error, { operation: 'partner_profile_load' });
+        return undefined;
+      }
       return (data as Profile | null) ?? null;
     },
     [],
@@ -189,8 +213,21 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
 
       partnershipRef.current = next;
       setPartnership(next);
-      setPartner(nextPartner);
+      // Keep the known partner on a failed read rather than reporting "none".
+      if (nextPartner !== undefined) setPartner(nextPartner);
       setAnchorHistory(nextHistory);
+
+      // Refresh the durable coverage flag only when we actually know.
+      if (!next || next.status !== 'active') {
+        setPartnerCovered(false);
+        void AsyncStorage.removeItem(PARTNER_COVERED_KEY);
+      } else if (nextPartner !== undefined) {
+        const covered = nextPartner?.is_pro === true;
+        setPartnerCovered(covered);
+        void (covered
+          ? AsyncStorage.setItem(PARTNER_COVERED_KEY, 'true')
+          : AsyncStorage.removeItem(PARTNER_COVERED_KEY));
+      }
 
       // Detect a fresh pairing transition.
       if (next && next.status === 'active' && nextPartner) {
@@ -449,6 +486,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       anchorHistory,
       weekTimezone,
       loading,
+      partnerCovered,
       refresh,
       update,
       setWeekStartDay,
@@ -464,6 +502,7 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       anchorHistory,
       weekTimezone,
       loading,
+      partnerCovered,
       refresh,
       update,
       setWeekStartDay,

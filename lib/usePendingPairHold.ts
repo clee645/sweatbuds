@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 
-import {
-  getPendingInviteBlocked,
-  getPendingInviteCode,
-  subscribePendingInviteBlocked,
-  subscribePendingInviteCode,
-} from './onboarding';
+import { getPendingInviteBlocked, getPendingInviteCode } from './onboarding';
+
+// Explicit "the pairer has finished with this launch" signal. Inferring it from
+// the stashed code being cleared released the hold too early — the code is
+// cleared before the partnership refresh and the navigation, so the gate still
+// saw an unsubscribed user and flashed the funnel. It also never fired at all
+// when redemption failed on a dead connection, so the splash sat for the full
+// deadline on every launch.
+const settleListeners = new Set<() => void>();
+
+export function notifyPendingPairSettled(): void {
+  for (const listener of settleListeners) listener();
+}
 
 // How long the splash may be held waiting for PendingInvitePairer to settle.
 // Generous enough for waitForProfileReady (8s cap) plus the redeem round trip,
@@ -40,13 +47,23 @@ export function usePendingPairHold(): boolean {
       }
     };
 
+    let released = false;
+    const onSettled = () => {
+      released = true;
+      release();
+    };
+    settleListeners.add(onSettled);
+
     void (async () => {
       const [code, blocked] = await Promise.all([
         getPendingInviteCode(),
         getPendingInviteBlocked(),
       ]);
       if (cancelled) return;
-      if (!code || blocked) {
+      // `released` guards the window where the pairer settled while these two
+      // reads were still in flight — holding then would wait out the full
+      // deadline with nothing left to wait for.
+      if (!code || blocked || released) {
         setHold(false);
         return;
       }
@@ -54,18 +71,10 @@ export function usePendingPairHold(): boolean {
       timerRef.current = setTimeout(release, HOLD_MS);
     })();
 
-    const unsubCode = subscribePendingInviteCode((code) => {
-      if (!code) release();
-    });
-    const unsubBlocked = subscribePendingInviteBlocked((blocked) => {
-      if (blocked) release();
-    });
-
     return () => {
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
-      unsubCode();
-      unsubBlocked();
+      settleListeners.delete(onSettled);
     };
   }, []);
 

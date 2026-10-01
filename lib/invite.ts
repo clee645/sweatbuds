@@ -116,6 +116,17 @@ export async function checkInviteCode(rawCode: string): Promise<InviteCodeCheck>
 // Pairing was refused only because neither partner is subscribed yet. Unlike
 // the other redemption errors this isn't final: the same code works once one of
 // them subscribes, so callers holding a stashed code should keep it.
+// The caller is already in an active partnership. For a stashed code being
+// retried in the background this means "this code already did its job" (a
+// manual pair, or a response lost after the server committed), so callers can
+// treat it as a quiet success rather than a failure to report.
+export class AlreadyPairedError extends Error {
+  constructor() {
+    super("You're already paired. Unpair from your current partner first.");
+    this.name = 'AlreadyPairedError';
+  }
+}
+
 export class SubscriptionRequiredError extends Error {
   constructor() {
     super('A subscription is required to pair. Subscribe to unlock Sweatbuds for both of you.');
@@ -136,7 +147,7 @@ export async function pairWithCode(rawCode: string): Promise<Partnership> {
   const { data, error } = await supabase.rpc('redeem_invite_code', { code });
   if (error) {
     if (error.code === 'P0001') {
-      throw new Error("You're already paired. Leave your current team to join a new one.");
+      throw new AlreadyPairedError();
     }
     if (error.code === 'P0002') {
       throw new Error("That's your own code.");

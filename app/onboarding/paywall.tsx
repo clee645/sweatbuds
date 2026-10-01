@@ -153,7 +153,9 @@ export default function PaywallScreen() {
 
   const finishPaywall = async () => {
     await setPaywallSeen();
-    router.push('/onboarding/paywall-success');
+    // replace, not push: swiping back to a paywall rendered before the purchase
+    // showed stale trial copy for a trial that had just been consumed.
+    router.replace('/onboarding/paywall-success');
   };
 
   const skip = async () => {
@@ -372,7 +374,9 @@ export default function PaywallScreen() {
             variant="orange"
             label={submitting ? 'Processing…' : copy.button}
             onPress={handlePurchase}
-            disabled={submitting || loading || (productIds.length > 0 && eligibility === null)}
+            // Never gated on the trial-eligibility lookup: that only decides
+            // wording, and a slow one left the CTA grey with no explanation.
+            disabled={submitting || loading}
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
 

@@ -65,8 +65,16 @@ export default function HomeScreen() {
   // An invitee who quit on the signature pad hasn't agreed to their partner's
   // terms yet, so send them back there rather than straight to the payoff —
   // join-confirm hands off to the celebration once they do.
+  // Route once per partnership: the effect re-runs on every partnership object
+  // identity change (any realtime update to the row), and without this a
+  // partner editing the weekly rules replaced /join-confirm with itself,
+  // wiping an in-progress signature. It also made Android's back button on
+  // that screen bounce straight back to it.
+  const celebrationRoutedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!freshlyPaired?.viaColdStart) return;
+    if (celebrationRoutedFor.current === freshlyPaired.partnershipId) return;
+    celebrationRoutedFor.current = freshlyPaired.partnershipId;
     let cancelled = false;
     void (async () => {
       const isInvitee = Boolean(partnership && user && partnership.user_b === user.id);
@@ -83,8 +91,12 @@ export default function HomeScreen() {
     };
   }, [freshlyPaired, partnership, user]);
 
-  const isPaired = Boolean(
-    partnership && partnership.status === 'active' && partnership.paired_at && partner,
+  // The partnership is active even when the partner's PROFILE hasn't loaded.
+  // Week math must follow the couple's anchor in that window — falling back to
+  // the solo week gave a paired user different boundaries and counts from the
+  // ones their partner sees.
+  const hasActivePartnership = Boolean(
+    partnership && partnership.status === 'active' && partnership.paired_at,
   );
 
   const paidAnchor = getPairedAnchor(partnership, weekTimezone);
@@ -93,7 +105,7 @@ export default function HomeScreen() {
   // them "0 of N" forever while the carousel, success screen and widget all
   // counted the same workouts. Same fallback those two already use.
   const weekWindow =
-    (isPaired ? getWeekWindow(partnership, weekTimezone) : null) ??
+    (hasActivePartnership ? getWeekWindow(partnership, weekTimezone) : null) ??
     getSoloWeekWindow(weekTimezone);
   const weekStart = weekWindow?.weekStart ?? null;
   const weekEnd = weekWindow?.weekEnd ?? null;
@@ -241,7 +253,7 @@ export default function HomeScreen() {
   // the partnership has its first goal-hit week and the pill swaps to streak.
   const thisWeekJointCount = thisWeekWorkouts.length;
 
-  const streak = isPaired
+  const streak = hasActivePartnership
     ? partnershipWeekStreak(
         workouts,
         partnership,
@@ -267,7 +279,7 @@ export default function HomeScreen() {
     hero = <Text style={styles.loadError}>{workoutsError}</Text>;
   } else if (archivingSnapshot) {
     hero = <WorkoutCarousel workouts={archivingSnapshot} archiving />;
-  } else if (!isPaired) {
+  } else if (!hasActivePartnership) {
     hero = workouts.length === 0 ? <EmptyHero /> : <WorkoutCarousel workouts={workouts} />;
   } else if (thisWeekWorkouts.length === 0) {
     hero = <FreshWeekHero partnerFirstName={partner?.display_name ?? null} />;
@@ -280,7 +292,7 @@ export default function HomeScreen() {
       <HomeHeader
         workoutCount={thisWeekJointCount}
         streak={streak}
-        hasPartner={isPaired}
+        hasPartner={hasActivePartnership}
         onOpenDrawer={() => navigation.dispatch(DrawerActions.openDrawer())}
         onPressInvite={handleInvite}
       />
@@ -294,7 +306,7 @@ export default function HomeScreen() {
               userWeek={userWeek}
               partnerWeek={partnerWeek}
               weekWindow={weekWindow ?? undefined}
-              workouts={isPaired ? thisWeekWorkouts : undefined}
+              workouts={hasActivePartnership ? thisWeekWorkouts : undefined}
               partnerId={partner?.id ?? null}
               onInvitePartner={handleInvite}
             />
