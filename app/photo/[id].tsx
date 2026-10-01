@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
@@ -52,19 +53,37 @@ export default function PhotoDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { workouts } = useWorkouts();
+  const { workouts, loading: workoutsLoading } = useWorkouts();
   const { removeWorkoutLocal } = useWorkoutSync();
   const { user, profile } = useAuth();
   const { partner } = usePartnership();
   const { byWorkout, add: addComment } = useWorkoutComments();
   const { markViewed } = useCommentViews();
 
-  const initialIndex = useMemo(() => {
-    const i = workouts.findIndex((w) => w.id === id);
-    return i >= 0 ? i : 0;
-  }, [workouts, id]);
+  // -1 while the requested workout isn't in the feed yet. Falling back to 0
+  // here is what made a notification tap open SOMEONE ELSE's workout: the push
+  // navigates before the feed refresh lands, so the id is briefly absent.
+  const initialIndex = useMemo(
+    () => workouts.findIndex((w) => w.id === id),
+    [workouts, id],
+  );
 
   const [activeIndex, setActiveIndex] = useState(initialIndex);
+
+  // Adopt the real position once the row arrives (cold start from a push, or a
+  // row outside the first page). Only while the user hasn't swiped yet.
+  const hasSettledRef = useRef(false);
+  useEffect(() => {
+    if (hasSettledRef.current) return;
+    if (initialIndex < 0) return;
+    hasSettledRef.current = true;
+    setActiveIndex(initialIndex);
+    if (initialIndex > 0) {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToIndex({ index: initialIndex, animated: false });
+      });
+    }
+  }, [initialIndex]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [uriMap, setUriMap] = useState<Record<string, string>>({});
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -90,19 +109,29 @@ export default function PhotoDetailScreen() {
       setUriMap({});
       return;
     }
-    getSignedUrls(paths).then((map) => {
-      if (!cancelled) setUriMap(map);
-    });
+    getSignedUrls(paths)
+      .then((map) => {
+        if (!cancelled) setUriMap(map);
+      })
+      .catch((e) => {
+        // Offline / expired token: the cards fall back to their cached images
+        // rather than an unhandled rejection.
+        captureException(e, { operation: 'photo_detail_signed_urls' });
+      });
     return () => {
       cancelled = true;
     };
   }, [workouts]);
 
+  // Only bail once the feed has actually loaded and still doesn't have it —
+  // otherwise a cold-start push closed the screen before the first fetch
+  // returned.
   useEffect(() => {
-    if (workouts.length === 0) {
+    if (workoutsLoading) return;
+    if (workouts.length === 0 || initialIndex < 0) {
       router.back();
     }
-  }, [workouts.length, router]);
+  }, [workoutsLoading, workouts.length, initialIndex, router]);
 
   // Track keyboard height + animate the layout transitions. We manage this
   // ourselves (instead of KeyboardAvoidingView) so we can both pad the
@@ -241,7 +270,20 @@ export default function PhotoDetailScreen() {
   };
 
   if (!active) {
-    return <View style={styles.container} />;
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.chrome}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.iconBtn}>
+            <Ionicons name="chevron-down" size={28} color={colors.text} />
+          </Pressable>
+          <View style={styles.titleWrap} />
+          <View style={styles.iconBtn} />
+        </View>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={colors.textMuted} />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -272,7 +314,7 @@ export default function PhotoDetailScreen() {
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
-          initialScrollIndex={initialIndex}
+          initialScrollIndex={Math.max(initialIndex, 0)}
           getItemLayout={(_, index) => ({
             length: SCREEN_WIDTH,
             offset: SCREEN_WIDTH * index,
@@ -332,6 +374,11 @@ function formatTime(iso: string): string {
 }
 
 const styles = StyleSheet.create({
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   container: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   chrome: {

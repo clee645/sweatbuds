@@ -21,6 +21,7 @@ import { RemoveLocationSheet } from '@/components/location/RemoveLocationSheet';
 import { SavedLocationRow } from '@/components/location/SavedLocationRow';
 import { SearchResultRow } from '@/components/location/SearchResultRow';
 import { useAuth } from '@/lib/auth';
+import { toUserMessage } from '@/lib/errors';
 import { syncGeofences } from '@/lib/location/geofence';
 import { DebouncedMapKitSearch, type MapKitPlace } from '@/lib/location/mapkitSearch';
 import { ensureNotificationPermission } from '@/lib/location/notifications';
@@ -34,6 +35,7 @@ import {
   primeNameCache,
 } from '@/lib/location/savedLocations';
 import { useNotificationPermission } from '@/lib/location/useNotificationPermission';
+import { captureException } from '@/lib/reporting';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 import type { SavedLocation } from '@/types/db';
 
@@ -51,6 +53,8 @@ export function ManagerScreen() {
   const [searching, setSearching] = useState(false);
   const [saved, setSaved] = useState<SavedLocation[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [pendingPlace, setPendingPlace] = useState<MapKitPlace | null>(null);
   const [removeTarget, setRemoveTarget] = useState<SavedLocation | null>(null);
@@ -80,31 +84,46 @@ export function ManagerScreen() {
   }, []);
 
   // Load saved locations and bias the search around the user's coordinate.
+  //
+  // fetchSavedLocations throws, and an unguarded rejection here used to skip
+  // both setLoadingSaved(false) and the initial search — leaving the list on a
+  // spinner forever with no error and no way back.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
+    setLoadingSaved(true);
+    setLoadError(null);
     void (async () => {
-      const [coord, list] = await Promise.all([
-        getCurrentCoordinate(),
-        fetchSavedLocations(user.id),
-      ]);
-      if (cancelled) return;
-      if (coord) {
-        searcher.current?.setRegionBias(coord);
-        setUserCoord(coord);
+      try {
+        const [coord, list] = await Promise.all([
+          getCurrentCoordinate(),
+          fetchSavedLocations(user.id),
+        ]);
+        if (cancelled) return;
+        if (coord) {
+          searcher.current?.setRegionBias(coord);
+          setUserCoord(coord);
+        }
+        setSaved(list);
+        await primeNameCache(list);
+        pushGeofences(list);
+      } catch (e) {
+        if (cancelled) return;
+        captureException(e, { operation: 'saved_locations_load' });
+        setLoadError(toUserMessage(e, 'Could not load your saved places.'));
+      } finally {
+        if (!cancelled) {
+          setLoadingSaved(false);
+          // Kick off an initial nearby-gym search so the list isn't empty.
+          runSearch('');
+        }
       }
-      setSaved(list);
-      await primeNameCache(list);
-      pushGeofences(list);
-      setLoadingSaved(false);
-      // Kick off an initial nearby-gym search so the list isn't empty.
-      runSearch('');
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, reloadKey]);
 
   const runSearch = (text: string) => {
     const effective = text.trim().length > 0 ? text : NEARBY_DEFAULT_QUERY;
@@ -167,14 +186,21 @@ export function ManagerScreen() {
 
     void ensureNotificationPermission().then(() => refreshNotifications());
 
-    const inserted = await addSavedLocation({
-      userId: user.id,
-      name: place.name,
-      address: place.address,
-      latitude: place.latitude,
-      longitude: place.longitude,
-      mapkitIdentifier: place.identifier,
-    });
+    let inserted: SavedLocation;
+    try {
+      inserted = await addSavedLocation({
+        userId: user.id,
+        name: place.name,
+        address: place.address,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        mapkitIdentifier: place.identifier,
+      });
+    } catch (e) {
+      captureException(e, { operation: 'saved_location_add' });
+      Alert.alert('Could not save', toUserMessage(e));
+      return;
+    }
 
     const next = [inserted, ...saved];
     setSaved(next);
@@ -187,7 +213,13 @@ export function ManagerScreen() {
   };
 
   const handleConfirmRemove = async (location: SavedLocation) => {
-    await deleteSavedLocation(location.id);
+    try {
+      await deleteSavedLocation(location.id);
+    } catch (e) {
+      captureException(e, { operation: 'saved_location_remove' });
+      Alert.alert('Could not remove', toUserMessage(e));
+      return;
+    }
     const next = saved.filter((s) => s.id !== location.id);
     setSaved(next);
     pushGeofences(next);
@@ -318,6 +350,15 @@ export function ManagerScreen() {
               <View style={styles.loading}>
                 <ActivityIndicator color={colors.textMuted} />
               </View>
+            ) : loadError ? (
+              <Pressable
+                onPress={() => setReloadKey((k) => k + 1)}
+                style={styles.loading}
+                hitSlop={8}
+              >
+                <Text style={styles.empty}>{loadError}</Text>
+                <Text style={styles.retry}>Tap to try again</Text>
+              </Pressable>
             ) : (
               <Text style={styles.empty}>No results.</Text>
             )
@@ -452,6 +493,13 @@ const styles = StyleSheet.create({
   loading: {
     paddingVertical: spacing.xxl,
     alignItems: 'center',
+  },
+  retry: {
+    ...typography.caption,
+    color: colors.accent,
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: spacing.xs,
   },
   empty: {
     ...typography.caption,
