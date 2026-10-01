@@ -23,13 +23,19 @@ import { toUserMessage } from '@/lib/errors';
 import { captureException } from '@/lib/reporting';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, radii, spacing, typography } from '@/lib/theme';
+import { useHistoryWorkouts } from '@/lib/history';
 import { useWorkouts } from '@/lib/workouts';
 
 export default function ShareSweatcamScreen() {
   const router = useRouter();
   const { id, primary } = useLocalSearchParams<{ id: string; primary?: string }>();
-  const { workouts } = useWorkouts();
-  const workout = workouts.find((w) => w.id === id);
+  const { workouts, loading: workoutsLoading } = useWorkouts();
+  // History is the all-time set; the home feed is capped at 50 rows, so sharing
+  // an older memory (reached from History) used to open a blank screen that
+  // immediately closed.
+  const { workouts: historyWorkouts, loading: historyLoading } = useHistoryWorkouts();
+  const workout =
+    workouts.find((w) => w.id === id) ?? historyWorkouts.find((w) => w.id === id);
 
   const [uriMap, setUriMap] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -56,8 +62,11 @@ export default function ShareSweatcamScreen() {
   }, [workout]);
 
   useEffect(() => {
+    // Only give up once both sources have actually loaded — otherwise a cold
+    // open closes the screen before the lookup can succeed.
+    if (workoutsLoading || historyLoading) return;
     if (!workout) router.back();
-  }, [workout, router]);
+  }, [workout, workoutsLoading, historyLoading, router]);
 
   if (!workout) return <View style={styles.container} />;
 

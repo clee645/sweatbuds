@@ -4,8 +4,9 @@ import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 import * as Notifications from 'expo-notifications';
+import * as Updates from 'expo-updates';
 import { router, useNavigation } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,7 +27,27 @@ import { useSubscription } from '@/lib/subscription';
 import { supabase } from '@/lib/supabase';
 import { colors, spacing, typography } from '@/lib/theme';
 import { getCurrentWeekStartDay } from '@/lib/week';
+import { deviceTimezone } from '@/lib/zonedTime';
 import { debugForcePartnerSync } from '@/lib/widget';
+
+// What the About row can truthfully say about this build. "Up to date" used to
+// be hardcoded, so it claimed that even with an update already downloaded.
+type UpdateState = 'unsupported' | 'checking' | 'current' | 'available' | 'unknown';
+
+function updateStatusLabel(state: UpdateState): string | undefined {
+  switch (state) {
+    case 'checking':
+      return 'Checking…';
+    case 'current':
+      return 'Up to date';
+    case 'available':
+      return 'Update ready — tap to restart';
+    default:
+      // 'unsupported' (dev build / updates disabled) and 'unknown' (offline or
+      // the check failed) say nothing rather than guess.
+      return undefined;
+  }
+}
 
 function providerLabel(provider: string | undefined): string {
   if (!provider) return 'Email';
@@ -76,9 +97,53 @@ export default function SettingsScreen() {
   const avatarUrl = profile?.avatar_url ?? undefined;
   const initial = displayName.trim().charAt(0).toUpperCase() || '?';
   const provider = providerLabel(user?.app_metadata?.provider as string | undefined);
-  const timezone = profile?.timezone ?? 'America/Los_Angeles';
+  // The device's own zone, not a hardcoded 'America/Los_Angeles' — that showed
+  // "Los Angeles" as this user's saved timezone whenever the profile hadn't
+  // loaded or the column was unset, which is a confusing thing to read on the
+  // screen where you set it.
+  const timezone = profile?.timezone ?? deviceTimezone();
   const weekStartDay = getCurrentWeekStartDay(partnership, weekTimezone);
   const version = Constants.expoConfig?.version ?? '1.0.0';
+
+  const [updateState, setUpdateState] = useState<UpdateState>(
+    Updates.isEnabled ? 'checking' : 'unsupported',
+  );
+
+  useEffect(() => {
+    if (!Updates.isEnabled) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await Updates.checkForUpdateAsync();
+        if (cancelled) return;
+        setUpdateState(result.isAvailable ? 'available' : 'current');
+      } catch {
+        // Offline or the update server is unreachable: say nothing rather than
+        // claim the app is current.
+        if (!cancelled) setUpdateState('unknown');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyUpdate = () => {
+    Alert.alert('Restart to update?', 'Sweatbuds will close and reopen with the latest version.', [
+      { text: 'Not now', style: 'cancel' },
+      {
+        text: 'Restart',
+        onPress: async () => {
+          try {
+            await Updates.fetchUpdateAsync();
+            await Updates.reloadAsync();
+          } catch (e) {
+            Alert.alert('Could not update', toUserMessage(e, 'Try again later.'));
+          }
+        },
+      },
+    ]);
+  };
 
   const handleBack = () => {
     router.replace('/');
@@ -354,7 +419,8 @@ export default function SettingsScreen() {
             icon="information-circle-outline"
             title={`Version ${version}`}
             accessory="text"
-            accessoryText="Up to date"
+            accessoryText={updateStatusLabel(updateState)}
+            onPress={updateState === 'available' ? applyUpdate : undefined}
           />
           <SettingsRow
             icon="lock-closed-outline"
