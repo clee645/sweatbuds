@@ -116,12 +116,26 @@ export async function clearWidgetSetupSeen(): Promise<void> {
 // by PendingInvitePairer once the user authenticates.
 const PENDING_INVITE_CODE_KEY = 'sweatbuds:pendingInviteCode';
 
+// Watchers so the drawer gate can hold the splash while a stashed code is
+// still being redeemed, and drop it the moment the pairer settles.
+const inviteCodeListeners = new Set<(code: string | null) => void>();
+
+export function subscribePendingInviteCode(
+  listener: (code: string | null) => void,
+): () => void {
+  inviteCodeListeners.add(listener);
+  return () => {
+    inviteCodeListeners.delete(listener);
+  };
+}
+
 export async function setPendingInviteCode(code: string): Promise<void> {
   try {
     await AsyncStorage.setItem(PENDING_INVITE_CODE_KEY, code);
   } catch {
     // Best-effort.
   }
+  for (const listener of inviteCodeListeners) listener(code);
 }
 
 export async function getPendingInviteCode(): Promise<string | null> {
@@ -138,6 +152,7 @@ export async function clearPendingInviteCode(): Promise<void> {
   } catch {
     // Best-effort.
   }
+  for (const listener of inviteCodeListeners) listener(null);
 }
 
 // Set when a stashed invite code was refused because neither partner has

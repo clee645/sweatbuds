@@ -11,6 +11,7 @@ import {
 } from 'react';
 
 import { useAuth } from './auth';
+import { captureException } from './reporting';
 import { supabase } from './supabase';
 import {
   getCurrentWeekStartDay,
@@ -142,11 +143,16 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       if (!p || p.status !== 'active') return null;
       const partnerId = p.user_a === uid ? p.user_b : p.user_a;
       if (!partnerId) return null;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select(PROFILE_COLUMNS)
         .eq('id', partnerId)
         .maybeSingle();
+      // A failed read is NOT "they have no partner" — it used to return null
+      // either way, which read as a half-loaded partnership and held home on
+      // the skeleton. Still returns null (callers have no better option), but
+      // the failure is now visible instead of silent.
+      if (error) captureException(error, { operation: 'partner_profile_load' });
       return (data as Profile | null) ?? null;
     },
     [],

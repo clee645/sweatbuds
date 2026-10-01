@@ -36,6 +36,9 @@ import type { Workout } from '@/types/db';
 
 const ROLLOVER_ANIM_MS = 700;
 
+// How long home waits for the partner's profile before rendering without it.
+const PARTNER_WAIT_MS = 5000;
+
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { user, profile } = useAuth();
@@ -127,14 +130,34 @@ export default function HomeScreen() {
     };
   }, []);
 
+  // The partner profile can fail to load (flaky network) while the partnership
+  // itself is active — fetchPartner reports that as "no partner". Without a
+  // deadline the hydration gate below then holds the skeleton indefinitely,
+  // right at the moment the partner joins. Give up waiting after a few seconds
+  // and render home; the next refresh fills the partner in.
+  const awaitingPartner =
+    !partnershipLoading &&
+    partnership?.status === 'active' &&
+    partner === null;
+  const [partnerWaitExpired, setPartnerWaitExpired] = useState(false);
+  useEffect(() => {
+    if (!awaitingPartner) {
+      setPartnerWaitExpired(false);
+      return;
+    }
+    const timer = setTimeout(() => setPartnerWaitExpired(true), PARTNER_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [awaitingPartner]);
+
   // Hydration gate: never render a half-loaded home after pairing. Also hold
   // while the subscription/partnership access gate is still resolving so we
   // don't flash LockedHome to a paid user before RevenueCat re-confirms.
   const partnershipReady =
-    !partnershipLoading &&
-    (partnership === null ||
-      partnership.status !== 'active' ||
-      partner !== null);
+    partnerWaitExpired ||
+    (!partnershipLoading &&
+      (partnership === null ||
+        partnership.status !== 'active' ||
+        partner !== null));
   if (!partnershipReady || workoutsLoading || gateLoading) {
     return <HomeSkeleton />;
   }

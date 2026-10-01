@@ -7,12 +7,16 @@ import { useAuth } from '@/lib/auth';
 import { useOnboardingSeen, usePaywallSeen } from '@/lib/onboarding';
 import { colors } from '@/lib/theme';
 import { useAccessGate } from '@/lib/useAccessGate';
+import { usePendingPairHold } from '@/lib/usePendingPairHold';
 
 export default function DrawerLayout() {
   const { session, loading } = useAuth();
   const { seen } = useOnboardingSeen();
   const { seen: paywallSeen } = usePaywallSeen();
   const { unlocked, loading: gateLoading } = useAccessGate();
+  // An invitee signing up against a partner who already pays: hold here rather
+  // than bouncing them through the funnel for the second it takes to redeem.
+  const pairHold = usePendingPairHold();
 
   if (!loading && !session) {
     // First-launch users see onboarding before sign-in; everyone else goes
@@ -27,7 +31,7 @@ export default function DrawerLayout() {
     // Hold on the splash while the paywall flag or the subscription/partnership
     // gate is still resolving — prevents a paid reinstaller (unlocked via the
     // profiles.is_pro bridge) from flashing the funnel before RC re-confirms.
-    if (paywallSeen === null || gateLoading) {
+    if (paywallSeen === null || gateLoading || pairHold) {
       return <BrandedSplash />;
     }
     // Show the intro funnel once to brand-new, not-yet-subscribed users.

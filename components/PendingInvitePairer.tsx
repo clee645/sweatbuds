@@ -9,6 +9,7 @@ import { pairWithCode, SubscriptionRequiredError } from '@/lib/invite';
 import {
   clearPendingInviteCode,
   getPendingInviteCode,
+  setPaywallSeen,
   setPendingInviteBlocked,
 } from '@/lib/onboarding';
 import { usePartnership } from '@/lib/partnership';
@@ -52,6 +53,10 @@ export function PendingInvitePairer() {
         const updated = await pairWithCode(code);
         await clearPendingInviteCode();
         await setPendingInviteBlocked(false);
+        // Their partner's subscription covers them, so the funnel is done with
+        // for good. Without this, any later launch that can't resolve the
+        // partnership (offline cold start) drops them back into the paywall.
+        await setPaywallSeen();
         await refresh();
 
         // Resolve the partner's name for the celebration screen.
