@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
 import { SignaturePad, SignaturePadHandle } from '@/components/onboarding/SignaturePad';
+import { setJoinFlowActive, setJoinTermsAgreed } from '@/lib/joinFlow';
 import { usePartnership } from '@/lib/partnership';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -14,19 +15,21 @@ import { colors, radii, spacing, typography } from '@/lib/theme';
 // to agree before the pairing celebration.
 export default function JoinConfirmScreen() {
   const params = useLocalSearchParams<{ name?: string }>();
-  const { partnership, partner, consumeFreshlyPaired } = usePartnership();
+  const { partnership, partner } = usePartnership();
   const padRef = useRef<SignaturePadHandle>(null);
   const [signed, setSigned] = useState(false);
 
   const partnerName =
     (typeof params.name === 'string' && params.name) || partner?.display_name || 'your partner';
 
-  // Consume the fresh-pairing signal so the in-app "partner joined" toast
-  // doesn't fire while the invitee is still on this screen — the pairing
-  // celebration is the intended payoff and runs right after this.
+  // Deliberately does NOT consume the fresh-pairing signal: that marks the
+  // pairing as seen, and doing it here meant quitting on the signature pad
+  // skipped both these terms and the celebration forever. The celebration
+  // screen consumes it once the user has actually agreed; the toast is kept
+  // quiet by the join-flow flag instead.
   useEffect(() => {
-    consumeFreshlyPaired();
-  }, [consumeFreshlyPaired]);
+    setJoinFlowActive(true);
+  }, []);
 
   const target = partnership?.weekly_target ?? null;
   const wagerEmoji = partnership?.wager_emoji ?? null;
@@ -35,6 +38,7 @@ export default function JoinConfirmScreen() {
 
   const handleAgree = () => {
     if (!signed) return;
+    if (partnership) void setJoinTermsAgreed(partnership.id);
     router.replace({
       pathname: '/pairing-celebration',
       params: typeof params.name === 'string' && params.name ? { name: params.name } : undefined,

@@ -4,6 +4,7 @@ import { Alert, AppState, type AppStateStatus } from 'react-native';
 
 import { useAuth } from '@/lib/auth';
 import { isNetworkError, toUserMessage } from '@/lib/errors';
+import { setJoinFlowActive } from '@/lib/joinFlow';
 import { captureException } from '@/lib/reporting';
 import { pairWithCode, SubscriptionRequiredError } from '@/lib/invite';
 import {
@@ -72,6 +73,7 @@ export function PendingInvitePairer() {
         }
         // Send the invitee to review & sign the shared terms their partner set;
         // join-confirm hands off to the pairing celebration once they agree.
+        setJoinFlowActive(true);
         router.push({
           pathname: '/join-confirm',
           params: partnerName ? { name: partnerName } : undefined,

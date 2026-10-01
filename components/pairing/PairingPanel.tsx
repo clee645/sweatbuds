@@ -44,6 +44,8 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
   const [pairing, setPairing] = useState(false);
   const [ownCode, setOwnCode] = useState<string | null>(null);
   const [ownCodeLoading, setOwnCodeLoading] = useState(true);
+  const [ownCodeError, setOwnCodeError] = useState<string | null>(null);
+  const [codeReloadKey, setCodeReloadKey] = useState(0);
   const [copied, setCopied] = useState(false);
 
   // An invitee who entered a code during onboarding but couldn't pair yet (no
@@ -67,12 +69,19 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
       return;
     }
     setOwnCodeLoading(true);
+    setOwnCodeError(null);
     getOrCreateInviteCode(userId)
       .then((code) => {
         if (!cancelled) setOwnCode(code);
       })
-      .catch(() => {
-        if (!cancelled) setOwnCode(null);
+      .catch((e) => {
+        if (cancelled) return;
+        // Offline or a server blip. Previously this left "Could not load code"
+        // on screen with a dead Share button and no way to retry short of
+        // killing the app.
+        captureException(e, { operation: 'invite_code_load' });
+        setOwnCode(null);
+        setOwnCodeError(toUserMessage(e, 'Could not load your code.'));
       })
       .finally(() => {
         if (!cancelled) setOwnCodeLoading(false);
@@ -80,7 +89,7 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, codeReloadKey]);
 
   const handleChange = (raw: string) => {
     const normalized = normalizeCode(raw);
@@ -188,9 +197,9 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
       <Text style={styles.orText}>or</Text>
 
       <Pressable
-        onPress={handleCopyOwnCode}
-        disabled={!ownCode}
-        style={({ pressed }) => [styles.codeCard, pressed && ownCode && styles.pressed]}
+        onPress={ownCode ? handleCopyOwnCode : () => setCodeReloadKey((k) => k + 1)}
+        disabled={ownCodeLoading}
+        style={({ pressed }) => [styles.codeCard, pressed && !ownCodeLoading && styles.pressed]}
       >
         {ownCodeLoading ? (
           <ActivityIndicator color={colors.textMuted} />
@@ -200,7 +209,12 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
             <Text style={styles.codeCardHint}>{copied ? 'Copied!' : 'Tap to copy'}</Text>
           </>
         ) : (
-          <Text style={styles.codeCardError}>Could not load code</Text>
+          <>
+            <Text style={styles.codeCardError}>
+              {ownCodeError ?? 'Could not load your code.'}
+            </Text>
+            <Text style={styles.codeCardHint}>Tap to try again</Text>
+          </>
         )}
       </Pressable>
 

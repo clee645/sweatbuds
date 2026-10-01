@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Particles } from '@/components/log/Particles';
+import { setJoinFlowActive } from '@/lib/joinFlow';
 import { usePartnership } from '@/lib/partnership';
 import { colors, spacing, typography } from '@/lib/theme';
 
@@ -27,6 +28,7 @@ export default function PairingCelebrationScreen() {
     // Mark as seen as soon as the celebration is showing so we don't also
     // queue the in-app toast or re-route on the next home render.
     consumeFreshlyPaired();
+    setJoinFlowActive(false);
   }, [consumeFreshlyPaired]);
 
   const handleDismiss = () => {

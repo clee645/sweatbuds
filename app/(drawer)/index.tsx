@@ -19,6 +19,7 @@ import { captureException } from '@/lib/reporting';
 import { sharePartnerInvite } from '@/lib/invite';
 import { usePartnership } from '@/lib/partnership';
 import { colors, spacing, typography } from '@/lib/theme';
+import { getJoinTermsAgreed } from '@/lib/joinFlow';
 import { useAccessGate } from '@/lib/useAccessGate';
 import { useWeekRollover } from '@/lib/useWeekRollover';
 import { DEFAULT_WAGER, type WagerRule } from '@/lib/wagers';
@@ -60,14 +61,27 @@ export default function HomeScreen() {
 
   // Cold-start celebration: realtime fired during background, or the user
   // re-opened the app and we discovered an unseen active partnership.
+  //
+  // An invitee who quit on the signature pad hasn't agreed to their partner's
+  // terms yet, so send them back there rather than straight to the payoff —
+  // join-confirm hands off to the celebration once they do.
   useEffect(() => {
-    if (freshlyPaired?.viaColdStart) {
+    if (!freshlyPaired?.viaColdStart) return;
+    let cancelled = false;
+    void (async () => {
+      const isInvitee = Boolean(partnership && user && partnership.user_b === user.id);
+      const agreedFor = isInvitee ? await getJoinTermsAgreed() : null;
+      if (cancelled) return;
+      const needsTerms = isInvitee && agreedFor !== partnership?.id;
       router.replace({
-        pathname: '/pairing-celebration',
+        pathname: needsTerms ? '/join-confirm' : '/pairing-celebration',
         params: { name: freshlyPaired.partnerName },
       });
-    }
-  }, [freshlyPaired]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [freshlyPaired, partnership, user]);
 
   const isPaired = Boolean(
     partnership && partnership.status === 'active' && partnership.paired_at && partner,

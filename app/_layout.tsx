@@ -28,6 +28,7 @@ import { WorkoutCommentsProvider } from '@/lib/comments';
 import { ConnectivityProvider } from '@/lib/connectivity';
 import { CommentViewsProvider } from '@/lib/commentViews';
 import { HistoryProvider } from '@/lib/history';
+import { useJoinFlowActive } from '@/lib/joinFlow';
 import { PartnershipProvider, usePartnership } from '@/lib/partnership';
 import { posthog } from '@/lib/posthog';
 import { SubscriptionProvider } from '@/lib/subscription';
@@ -205,8 +206,12 @@ function AuthGate() {
 // full-screen pairing-celebration modal, so we skip it here.
 function PartnerJoinedToastHost() {
   const { freshlyPaired, consumeFreshlyPaired } = usePartnership();
+  const joining = useJoinFlowActive();
 
   if (!freshlyPaired || freshlyPaired.viaColdStart) return null;
+  // The invitee gets join-confirm + the celebration instead; the toast would
+  // also read backwards for them ("X joined your team" — they joined X).
+  if (joining) return null;
   if (AppState.currentState !== 'active') return null;
 
   return (
