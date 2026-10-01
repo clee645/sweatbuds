@@ -18,6 +18,7 @@ import { getPartnershipWeekStart, partnershipWeekStreak } from '@/lib/week';
 import { zonedYmd } from '@/lib/zonedTime';
 import { useWorkouts } from '@/lib/workouts';
 import type { Workout } from '@/types/db';
+import { captureException } from '@/lib/reporting';
 
 type Props = {
   workouts: Workout[];
@@ -118,9 +119,15 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
       setUriMap({});
       return;
     }
-    getSignedUrls(earliestSelfiePaths).then((map) => {
-      if (!cancelled) setUriMap(map);
-    });
+    getSignedUrls(earliestSelfiePaths)
+      .then((map) => {
+        if (!cancelled) setUriMap(map);
+      })
+      .catch((e) => {
+        // Expired token / offline: cards fall back to their cached images
+        // instead of an unhandled rejection.
+        captureException(e, { operation: 'history_week_signed_urls' });
+      });
     return () => {
       cancelled = true;
     };

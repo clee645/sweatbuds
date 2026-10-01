@@ -24,23 +24,29 @@ export function CalendarDayTile({ dayNumber, isoDate, imageUri, imagePath }: Pro
   }
 
   const handlePress = () => {
-    if (!isoDate || !imageUri) return;
+    if (!isoDate || !imagePath) return;
     router.push(`/history/day/${isoDate}`);
   };
 
-  if (imageUri) {
+  // Presence of a PATH is what makes this a logged day; the signed URL may not
+  // have resolved yet (or at all, offline).
+  if (imagePath) {
     return (
       <Pressable
         onPress={handlePress}
         style={({ pressed }) => [styles.cell, pressed && styles.pressed]}
       >
         <View style={styles.tile}>
-          <Image
-            source={{ uri: imageUri, cacheKey: imagePath ?? imageUri }}
-            style={styles.image}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-          />
+          {imageUri ? (
+            <Image
+              source={{ uri: imageUri, cacheKey: imagePath }}
+              style={styles.image}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+            />
+          ) : (
+            <View style={[styles.image, styles.tilePending]} />
+          )}
           <View style={styles.numberOverlay} pointerEvents="none">
             <Text style={styles.numberOnImage}>{dayNumber}</Text>
           </View>
@@ -69,6 +75,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     overflow: 'hidden',
     backgroundColor: colors.card,
+  },
+  // A logged day whose photo hasn't resolved: same shape and the same date
+  // overlay as a photo tile, so it never reads as a missed day.
+  tilePending: {
+    backgroundColor: colors.cardElevated,
   },
   tileEmpty: {
     flex: 1,

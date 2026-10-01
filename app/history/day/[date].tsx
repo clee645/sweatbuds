@@ -93,9 +93,15 @@ export default function DayMemoryScreen() {
       setUriMap({});
       return;
     }
-    getSignedUrls(paths).then((map) => {
-      if (!cancelled) setUriMap(map);
-    });
+    getSignedUrls(paths)
+      .then((map) => {
+        if (!cancelled) setUriMap(map);
+      })
+      .catch((e) => {
+        // Expired token / offline: cards fall back to their cached images
+        // instead of an unhandled rejection.
+        captureException(e, { operation: 'day_detail_signed_urls' });
+      });
     return () => {
       cancelled = true;
     };

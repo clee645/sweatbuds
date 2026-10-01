@@ -10,6 +10,7 @@ import { colors, radii, spacing, typography } from '@/lib/theme';
 import { getPairedAnchor } from '@/lib/week';
 import { zonedYmd } from '@/lib/zonedTime';
 import type { Workout } from '@/types/db';
+import { captureException } from '@/lib/reporting';
 
 type Props = {
   workouts: Workout[];
@@ -91,9 +92,15 @@ export function CalendarView({ workouts, bottomPad }: Props) {
       setUriMap({});
       return;
     }
-    getSignedUrls(earliestSelfiePaths).then((map) => {
-      if (!cancelled) setUriMap(map);
-    });
+    getSignedUrls(earliestSelfiePaths)
+      .then((map) => {
+        if (!cancelled) setUriMap(map);
+      })
+      .catch((e) => {
+        // Expired token / offline: cards fall back to their cached images
+        // instead of an unhandled rejection.
+        captureException(e, { operation: 'history_calendar_signed_urls' });
+      });
     return () => {
       cancelled = true;
     };

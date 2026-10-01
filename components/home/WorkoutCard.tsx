@@ -20,6 +20,9 @@ type Props = {
   onSwap?: () => void;
 };
 
+// Neutral dark blur shown while a photo resolves (or if it can't).
+const PLACEHOLDER_BLURHASH = 'L02rs+ofofofofofofofofofofof';
+
 export function WorkoutCard({
   selfie,
   environment,
@@ -45,6 +48,12 @@ export function WorkoutCard({
         style={styles.main}
         contentFit="cover"
         cachePolicy="memory-disk"
+        // Without these, a photo whose signed URL never resolved (offline, or
+        // an expired token) renders as a dark empty rectangle with no hint
+        // that anything is wrong.
+        placeholder={{ blurhash: PLACEHOLDER_BLURHASH }}
+        placeholderContentFit="cover"
+        transition={150}
       />
 
       {insetSource ? (

@@ -35,17 +35,24 @@ export function DayThumbnail({
   return (
     <View style={[styles.column, future && styles.future]}>
       <Text style={styles.letter}>{letter}</Text>
-      {imageUri ? (
+      {imagePath ? (
+        // Keyed on the PATH, not the signed URL: a day with a workout stays a
+        // logged, tappable day even while its URL is resolving or failed to —
+        // keying on the URI made offline days render as missed ones.
         <Pressable
           onPress={() => router.push(`/history/day/${isoDate}`)}
           style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
         >
-          <Image
-            source={{ uri: imageUri, cacheKey: imagePath ?? imageUri }}
-            style={styles.image}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-          />
+          {imageUri ? (
+            <Image
+              source={{ uri: imageUri, cacheKey: imagePath }}
+              style={styles.image}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+            />
+          ) : (
+            <View style={[styles.image, styles.tilePending]} />
+          )}
           <View style={styles.numberOverlay} pointerEvents="none">
             <Text style={styles.numberOnImage}>{dayNumber}</Text>
           </View>
@@ -83,6 +90,11 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  // A logged day whose photo hasn't resolved: same shape and the same date
+  // overlay as a photo tile, so it never reads as a missed day.
+  tilePending: {
+    backgroundColor: colors.cardElevated,
   },
   tileEmpty: {
     backgroundColor: 'transparent',

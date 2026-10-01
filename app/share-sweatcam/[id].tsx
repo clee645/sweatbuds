@@ -41,9 +41,15 @@ export default function ShareSweatcamScreen() {
     const paths = [workout.selfie_path, workout.environment_path].filter(
       (p): p is string => Boolean(p),
     );
-    getSignedUrls(paths).then((map) => {
-      if (!cancelled) setUriMap(map);
-    });
+    getSignedUrls(paths)
+      .then((map) => {
+        if (!cancelled) setUriMap(map);
+      })
+      .catch((e) => {
+        // Expired token / offline: cards fall back to their cached images
+        // instead of an unhandled rejection.
+        captureException(e, { operation: 'share_sweatcam_signed_urls' });
+      });
     return () => {
       cancelled = true;
     };

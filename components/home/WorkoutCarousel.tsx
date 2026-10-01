@@ -21,6 +21,7 @@ import { colors, spacing, typography } from '@/lib/theme';
 import { timeAgo } from '@/lib/time';
 import type { Workout } from '@/types/db';
 import { WorkoutCard } from './WorkoutCard';
+import { captureException } from '@/lib/reporting';
 
 type Props = {
   workouts: Workout[];
@@ -147,18 +148,25 @@ export function WorkoutCarousel({ workouts, archiving = false }: Props) {
       setUriMap({});
       return;
     }
-    getSignedUrls(paths).then((map) => {
-      if (cancelled) return;
-      // Skip the state update when nothing changed — avoids a redundant re-render
-      // that would otherwise pass freshly-allocated source objects to <Image>.
-      setUriMap((prev) => {
-        const keys = Object.keys(map);
-        if (keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === map[k])) {
-          return prev;
-        }
-        return map;
+    getSignedUrls(paths)
+      .then((map) => {
+        if (cancelled) return;
+        // Skip the state update when nothing changed — avoids a redundant
+        // re-render that would otherwise pass freshly-allocated source objects
+        // to <Image>.
+        setUriMap((prev) => {
+          const keys = Object.keys(map);
+          if (keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === map[k])) {
+            return prev;
+          }
+          return map;
+        });
+      })
+      .catch((e) => {
+        // Expired token / offline: cards fall back to their cached images
+        // instead of an unhandled rejection.
+        captureException(e, { operation: 'home_carousel_signed_urls' });
       });
-    });
     return () => {
       cancelled = true;
     };
