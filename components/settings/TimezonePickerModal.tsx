@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
@@ -74,6 +74,10 @@ export function TimezonePickerModal({ visible, onClose }: Props) {
   const allZones = useMemo(getAllTimezones, []);
   const [query, setQuery] = useState('');
   const [savingZone, setSavingZone] = useState<string | null>(null);
+  // SafeAreaView reports zero insets the first time a Modal opens after
+  // launch, which put the back button under the status bar. Hook insets
+  // come from the app's provider and are correct from the first render.
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) setQuery('');
@@ -111,7 +115,7 @@ export function TimezonePickerModal({ visible, onClose }: Props) {
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={[styles.safe, { paddingTop: insets.top }]}>
         <View style={styles.headerRow}>
           <Pressable onPress={onClose} style={styles.iconBtn} hitSlop={12}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -146,7 +150,10 @@ export function TimezonePickerModal({ visible, onClose }: Props) {
         <FlatList
           data={filtered}
           keyExtractor={(item) => item}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: styles.listContent.paddingBottom + insets.bottom },
+          ]}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => {
             const selected = item === currentZone;
@@ -170,7 +177,7 @@ export function TimezonePickerModal({ visible, onClose }: Props) {
             <Text style={styles.empty}>No timezones match “{query}”.</Text>
           }
         />
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
