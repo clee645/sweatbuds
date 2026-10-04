@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 
 import { useAuth } from '@/lib/auth';
+import { useIsOnline } from '@/lib/connectivity';
+import { isNetworkError } from '@/lib/errors';
 import { generateInviteCode } from '@/lib/invite';
 import {
   clearMyPendingInviteCode,
@@ -10,21 +12,23 @@ import {
   getPendingWorkoutDays,
 } from '@/lib/onboarding';
 import { usePartnership } from '@/lib/partnership';
+import { captureException } from '@/lib/reporting';
 import { supabase } from '@/lib/supabase';
 import { deviceTimezone } from '@/lib/zonedTime';
 
 // Persists the user's onboarding choices (weekly plan, wager, and any invite
 // code they generated) into a `partnerships` row once they sign up, so their
 // configured weekly rules survive into the account. Renders nothing; runs once
-// per mount.
+// per mount, and again after reconnecting if a network failure cut it short.
 export function PendingInviteRegistrar() {
   const { user } = useAuth();
   const { refresh } = usePartnership();
+  const isOnline = useIsOnline();
   const attempted = useRef(false);
 
   useEffect(() => {
     const userId = user?.id;
-    if (!userId || attempted.current) return;
+    if (!userId || !isOnline || attempted.current) return;
     attempted.current = true;
 
     let cancelled = false;
@@ -32,13 +36,23 @@ export function PendingInviteRegistrar() {
       // Skip if this user is already part of a partnership (e.g. they redeemed
       // a partner's code during onboarding — those rules belong to the inviter,
       // so we must not overwrite them with this user's picks).
-      const { data: existing } = await supabase
+      const { data: existing, error: lookupError } = await supabase
         .from('partnerships')
         .select('id')
         .or(`user_a.eq.${userId},user_b.eq.${userId}`)
         .limit(1)
         .maybeSingle();
       if (cancelled) return;
+      // A failed lookup is NOT "no partnership". Treating it as one inserted a
+      // second row (or, offline, alerted "Setup issue" on every cold launch).
+      // Stay silent and retry on reconnect / next launch.
+      if (lookupError) {
+        attempted.current = false;
+        if (!isNetworkError(lookupError)) {
+          captureException(lookupError, { operation: 'pending_invite_register_lookup' });
+        }
+        return;
+      }
       if (existing) {
         await clearMyPendingInviteCode();
         return;
@@ -84,7 +98,12 @@ export function PendingInviteRegistrar() {
           .insert({ ...base, invite_code: generateInviteCode() }));
       }
       if (cancelled) return;
+      if (error && isNetworkError(error)) {
+        attempted.current = false;
+        return;
+      }
       if (error) {
+        captureException(error, { operation: 'pending_invite_register_insert' });
         Alert.alert(
           'Setup issue',
           'We could not finish setting up your partnership. You can invite your partner from the Partner screen.',
@@ -98,7 +117,7 @@ export function PendingInviteRegistrar() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, refresh]);
+  }, [user?.id, isOnline, refresh]);
 
   return null;
 }

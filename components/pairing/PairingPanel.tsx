@@ -1,6 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,7 +11,8 @@ import {
   View,
 } from 'react-native';
 
-import { toUserMessage } from '@/lib/errors';
+import { useIsOnline } from '@/lib/connectivity';
+import { OFFLINE_MESSAGE, toUserMessage } from '@/lib/errors';
 import { captureException } from '@/lib/reporting';
 import {
   formatCode,
@@ -47,6 +48,8 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
   const [ownCodeError, setOwnCodeError] = useState<string | null>(null);
   const [codeReloadKey, setCodeReloadKey] = useState(0);
   const [copied, setCopied] = useState(false);
+  const sharingRef = useRef(false);
+  const isOnline = useIsOnline();
 
   // An invitee who entered a code during onboarding but couldn't pair yet (no
   // subscription on either side) still has it stashed. Prefill it rather than
@@ -144,12 +147,22 @@ export function PairingPanel({ userId, onPaired, autoFocus, fillToShare }: Props
 
   const handleShare = async () => {
     if (!userId) return;
+    // Repeat taps while the lookup is pending would each queue their own share
+    // sheet or error alert. A ref, not state, so taps in the same frame see it.
+    if (sharingRef.current) return;
+    if (!isOnline) {
+      Alert.alert('Could not share invite', OFFLINE_MESSAGE);
+      return;
+    }
+    sharingRef.current = true;
     try {
       await sharePartnerInvite(userId);
     } catch (e) {
       captureException(e, { operation: 'partner_invite_share' });
       const message = toUserMessage(e);
       Alert.alert('Could not share invite', message);
+    } finally {
+      sharingRef.current = false;
     }
   };
 

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DrawerActions } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useNavigation } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,7 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
-import { toUserMessage } from '@/lib/errors';
+import { useIsOnline } from '@/lib/connectivity';
+import { OFFLINE_MESSAGE, toUserMessage } from '@/lib/errors';
 import { captureException } from '@/lib/reporting';
 import { sharePartnerInvite } from '@/lib/invite';
 import {
@@ -36,6 +37,8 @@ export function LockedHome() {
   const { refresh: refreshSubscription } = useSubscription();
 
   const [restoring, setRestoring] = useState(false);
+  const sharingRef = useRef(false);
+  const isOnline = useIsOnline();
   // True when this user already entered their partner's code and pairing is
   // only waiting on a subscription (PendingInvitePairer keeps retrying).
   const [awaitingPair, setAwaitingPair] = useState(false);
@@ -57,12 +60,22 @@ export function LockedHome() {
   const openInvite = async () => {
     const userId = user?.id;
     if (!userId) return;
+    // Repeat taps while the lookup is pending would each queue their own share
+    // sheet or error alert. A ref, not state, so taps in the same frame see it.
+    if (sharingRef.current) return;
+    if (!isOnline) {
+      Alert.alert('Could not share invite', OFFLINE_MESSAGE);
+      return;
+    }
+    sharingRef.current = true;
     try {
       await sharePartnerInvite(userId);
     } catch (e) {
       captureException(e, { operation: 'partner_invite_share' });
       const message = toUserMessage(e);
       Alert.alert('Could not share invite', message);
+    } finally {
+      sharingRef.current = false;
     }
   };
 

@@ -33,7 +33,7 @@ export function isCompleteCode(raw: string): boolean {
 }
 
 export async function getOrCreateInviteCode(userId: string): Promise<string> {
-  const { data: existing } = await supabase
+  const { data: existing, error: lookupError } = await supabase
     .from('partnerships')
     .select('invite_code')
     .eq('user_a', userId)
@@ -41,6 +41,8 @@ export async function getOrCreateInviteCode(userId: string): Promise<string> {
     .eq('status', 'pending')
     .limit(1)
     .maybeSingle();
+  // Don't read a failed lookup as "no code yet" — that mints a duplicate row.
+  if (lookupError) throw lookupError;
 
   if (existing?.invite_code) return existing.invite_code as string;
 
