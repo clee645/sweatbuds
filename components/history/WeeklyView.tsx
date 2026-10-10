@@ -7,6 +7,7 @@ import { WeekCard } from '@/components/history/WeekCard';
 import { useAuth } from '@/lib/auth';
 import {
   bucketWorkoutsByPartnershipWeek,
+  bucketWorkoutsBySoloWeek,
   distinctDaysPerUser,
   partnershipWeekGoalHit,
   type WeekBucket,
@@ -14,7 +15,7 @@ import {
 import { usePartnership } from '@/lib/partnership';
 import { getSignedUrls } from '@/lib/storage';
 import { colors, radii, spacing, typography } from '@/lib/theme';
-import { getPartnershipWeekStart, partnershipWeekStreak } from '@/lib/week';
+import { getPartnershipWeekStart, getSoloWeekWindow, partnershipWeekStreak } from '@/lib/week';
 import { zonedYmd } from '@/lib/zonedTime';
 import { useWorkouts } from '@/lib/workouts';
 import type { Workout } from '@/types/db';
@@ -35,18 +36,39 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
   const partnerId = partner?.id ?? null;
   const target = partnership?.weekly_target ?? 3;
 
+  // Unpaired (no partnership, or only your own open invite): your own history
+  // in Monday weeks, the same solo week home uses, with no goal or partner.
+  // Paired: the couple's weeks.
+  const partnershipId =
+    partnership?.status === 'active' && partnership.paired_at ? partnership.id : null;
+  const solo = partnershipId === null;
+
+  // Paired weeks are the couple's record: only workouts logged under this
+  // partnership. History also holds your own unshared rows (logged while
+  // unpaired); a same-week re-pair can land those inside the partnership's
+  // span, where they'd be counted here but never by the wager settlement.
+  const sharedWorkouts = useMemo(
+    () => (partnershipId ? workouts.filter((w) => w.partnership_id === partnershipId) : workouts),
+    [workouts, partnershipId],
+  );
+
   const buckets = useMemo(
-    () => bucketWorkoutsByPartnershipWeek(workouts, partnership, anchorHistory, weekTimezone),
-    [workouts, partnership, anchorHistory, weekTimezone],
+    () =>
+      solo
+        ? bucketWorkoutsBySoloWeek(workouts, weekTimezone)
+        : bucketWorkoutsByPartnershipWeek(sharedWorkouts, partnership, anchorHistory, weekTimezone),
+    [solo, workouts, sharedWorkouts, partnership, anchorHistory, weekTimezone],
   );
 
   // The current week is shown first, live and in-progress, so the week is
   // visible from the day it starts rather than only once it closes. Everything
   // before it lands under "Past Weeks".
   const currentWeekStartMs = useMemo(() => {
-    const start = getPartnershipWeekStart(partnership, weekTimezone);
+    const start = solo
+      ? getSoloWeekWindow(weekTimezone).weekStart
+      : getPartnershipWeekStart(partnership, weekTimezone);
     return start ? start.getTime() : 0;
-  }, [partnership, weekTimezone]);
+  }, [solo, partnership, weekTimezone]);
   const currentBucket = useMemo(() => {
     // Guard on a real window: with no current week there is nothing to label
     // "This Week", and the newest past bucket must not be promoted into it.
@@ -63,18 +85,21 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
   // happened yet" apart from "missed".
   const todayYmd = useMemo(() => zonedYmd(new Date(), weekTimezone), [weekTimezone]);
 
+  // No goal without a partner, so no streak to show.
   const streak = useMemo(
     () =>
-      partnershipWeekStreak(
-        workouts,
-        partnership,
-        anchorHistory,
-        userId,
-        partnerId,
-        target,
-        weekTimezone,
-      ),
-    [workouts, partnership, anchorHistory, userId, partnerId, target],
+      solo
+        ? null
+        : partnershipWeekStreak(
+            sharedWorkouts,
+            partnership,
+            anchorHistory,
+            userId,
+            partnerId,
+            target,
+            weekTimezone,
+          ),
+    [solo, sharedWorkouts, partnership, anchorHistory, userId, partnerId, target, weekTimezone],
   );
 
   // Cumulative all-time count for the partnership (both users combined).
@@ -160,6 +185,7 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
                 tz={weekTimezone}
                 uriMap={uriMap}
                 todayYmd={todayYmd}
+                solo={solo}
               />
             </View>
           ) : null}
@@ -176,6 +202,7 @@ export function WeeklyView({ workouts, bottomPad }: Props) {
           target={target}
           tz={weekTimezone}
           uriMap={uriMap}
+          solo={solo}
         />
       )}
       ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -208,6 +235,7 @@ function BucketRow({
   tz,
   uriMap,
   todayYmd,
+  solo,
 }: {
   bucket: WeekBucket;
   userId: string | null;
@@ -217,9 +245,10 @@ function BucketRow({
   uriMap: Record<string, string>;
   // Set only for the in-progress week. See WeekCard's prop docs.
   todayYmd?: string;
+  solo: boolean;
 }) {
   const { a } = distinctDaysPerUser(bucket.workouts, userId, partnerId, tz);
-  const goalHit = partnershipWeekGoalHit(bucket.workouts, userId, partnerId, target, tz);
+  const goalHit = !solo && partnershipWeekGoalHit(bucket.workouts, userId, partnerId, target, tz);
   return (
     <WeekCard
       bucket={bucket}
@@ -228,6 +257,7 @@ function BucketRow({
       weeklyTarget={target}
       uriMap={uriMap}
       todayYmd={todayYmd}
+      solo={solo}
     />
   );
 }

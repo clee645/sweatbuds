@@ -29,6 +29,8 @@ type Props = {
   // progress instead of a verdict, and days after today are de-emphasized so
   // "hasn't happened yet" doesn't read as "missed".
   todayYmd?: string;
+  // Unpaired: no goal, so the subtitle is a plain count and never a verdict.
+  solo?: boolean;
 };
 
 export function WeekCard({
@@ -38,6 +40,7 @@ export function WeekCard({
   weeklyTarget,
   uriMap,
   todayYmd,
+  solo = false,
 }: Props) {
   const range = formatWeekRange(bucket.startYmd, bucket.endYmd);
   const displayDays = Math.min(userDays, weeklyTarget);
@@ -49,7 +52,9 @@ export function WeekCard({
         <View style={styles.titleCol}>
           <Text style={styles.range}>{range}</Text>
           <Text style={styles.subtitle}>
-            {displayDays} of {weeklyTarget} {inProgress ? 'days logged' : 'goal hit'}
+            {solo
+              ? `${userDays} day${userDays === 1 ? '' : 's'} logged`
+              : `${displayDays} of ${weeklyTarget} ${inProgress ? 'days logged' : 'goal hit'}`}
           </Text>
         </View>
         {goalHit ? (

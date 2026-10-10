@@ -3,24 +3,25 @@ import { StyleSheet, Text, View } from 'react-native';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
 type Props = {
-  streak: number;
+  // null when unpaired: a streak counts weeks the couple hit their goal.
+  streak: number | null;
   total: number;
 };
 
 export function StatCards({ streak, total }: Props) {
-  const streakActive = streak > 0;
+  const streakActive = streak !== null && streak > 0;
   return (
     <View style={styles.row}>
-      <View
-        style={[styles.card, streakActive ? styles.streakActive : styles.cardInactive]}
-      >
-        <View style={styles.headerRow}>
-          <Text style={styles.icon}>🔥</Text>
-          <Text style={[styles.label, streakActive && styles.labelActive]}>STREAK</Text>
+      {streak === null ? null : (
+        <View style={[styles.card, streakActive ? styles.streakActive : styles.cardInactive]}>
+          <View style={styles.headerRow}>
+            <Text style={styles.icon}>🔥</Text>
+            <Text style={[styles.label, streakActive && styles.labelActive]}>STREAK</Text>
+          </View>
+          <Text style={styles.bigNumber}>{streak}</Text>
+          <Text style={styles.unit}>Weeks goal hit</Text>
         </View>
-        <Text style={styles.bigNumber}>{streak}</Text>
-        <Text style={styles.unit}>Weeks goal hit</Text>
-      </View>
+      )}
 
       <View style={[styles.card, styles.cardInactive]}>
         <View style={styles.headerRow}>

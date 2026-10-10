@@ -1,5 +1,17 @@
-import { getPairedAnchorYmd, getPartnershipWeekBoundaries, workoutYmd } from './week';
-import { addZonedDays, diffZonedDays, zonedMonthDay } from './zonedTime';
+import {
+  DEFAULT_WEEK_START_DAY,
+  getPairedAnchorYmd,
+  getPartnershipWeekBoundaries,
+  getSoloWeekWindow,
+  workoutYmd,
+} from './week';
+import {
+  addZonedDays,
+  diffZonedDays,
+  zonedDayOfWeek,
+  zonedMidnightUtc,
+  zonedMonthDay,
+} from './zonedTime';
 import type { Partnership, PartnershipAnchorHistory, Workout } from '@/types/db';
 
 // Re-exported so consumers can keep importing it from the history module.
@@ -83,6 +95,57 @@ export function bucketWorkoutsByPartnershipWeek(
   }
 
   return buckets.slice().reverse();
+}
+
+// An unpaired user's own history in fixed 7-day weeks starting on
+// `weekStartDay` (Monday, matching the solo week home uses). Always includes
+// the current week, even when empty, so there's a live card to log into;
+// earlier weeks only when they hold a workout — with no goal to miss, an
+// empty past week says nothing. Returns newest week first.
+export function bucketWorkoutsBySoloWeek(
+  workouts: Workout[],
+  tz: string,
+  now: Date = new Date(),
+  weekStartDay: number = DEFAULT_WEEK_START_DAY,
+): WeekBucket[] {
+  const current = getSoloWeekWindow(tz, now, weekStartDay);
+  const byStart = new Map<string, WeekBucket>();
+
+  const bucketFor = (startYmd: string): WeekBucket => {
+    let b = byStart.get(startYmd);
+    if (!b) {
+      const endYmd = addZonedDays(startYmd, 7);
+      b = {
+        weekStart: zonedMidnightUtc(startYmd, tz),
+        weekEnd: zonedMidnightUtc(endYmd, tz),
+        startYmd,
+        endYmd,
+        dayCount: 7,
+        isTransition: false,
+        workouts: [],
+        byDay: Array.from({ length: 7 }, () => [] as Workout[]),
+      };
+      byStart.set(startYmd, b);
+    }
+    return b;
+  };
+
+  bucketFor(current.startYmd);
+  for (const w of workouts) {
+    const ymd = workoutYmd(w, tz);
+    if (!ymd) continue;
+    // Nothing after the current week can exist; guard against clock skew.
+    if (diffZonedDays(ymd, current.endYmd) >= 0) continue;
+    const offset = (zonedDayOfWeek(ymd) - weekStartDay + 7) % 7;
+    const startYmd = addZonedDays(ymd, -offset);
+    const bucket = bucketFor(startYmd);
+    bucket.workouts.push(w);
+    bucket.byDay[offset].push(w);
+  }
+
+  return Array.from(byStart.values()).sort(
+    (x, y) => y.weekStart.getTime() - x.weekStart.getTime(),
+  );
 }
 
 // Group workouts by calendar day (YYYY-MM-DD) in the couple's zone. Within
