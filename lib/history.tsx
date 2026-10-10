@@ -35,7 +35,13 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { partnership } = usePartnership();
   const userId = user?.id ?? null;
-  const partnershipId = partnership?.id ?? null;
+  // Only an ACTIVE partnership scopes history, as in lib/workouts.tsx. The
+  // code owner's open invite row BECOMES the partnership when redeemed (same
+  // id, pending → active), so keying on the bare id never refetched for them
+  // at pairing: their history kept the pre-pairing rows, without the
+  // partner's photos or the week carried over, until a relaunch. A pending
+  // row holds no one else's workouts anyway.
+  const partnershipId = partnership?.status === 'active' ? partnership.id : null;
 
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
