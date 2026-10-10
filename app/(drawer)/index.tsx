@@ -19,7 +19,7 @@ import { captureException } from '@/lib/reporting';
 import { sharePartnerInvite } from '@/lib/invite';
 import { usePartnership } from '@/lib/partnership';
 import { colors, spacing, typography } from '@/lib/theme';
-import { getJoinTermsAgreed } from '@/lib/joinFlow';
+import { needsJoinTerms } from '@/lib/joinFlow';
 import { useAccessGate } from '@/lib/useAccessGate';
 import { useWeekRollover } from '@/lib/useWeekRollover';
 import { DEFAULT_WAGER, type WagerRule } from '@/lib/wagers';
@@ -77,10 +77,8 @@ export default function HomeScreen() {
     celebrationRoutedFor.current = freshlyPaired.partnershipId;
     let cancelled = false;
     void (async () => {
-      const isInvitee = Boolean(partnership && user && partnership.user_b === user.id);
-      const agreedFor = isInvitee ? await getJoinTermsAgreed() : null;
+      const needsTerms = await needsJoinTerms(partnership, user?.id);
       if (cancelled) return;
-      const needsTerms = isInvitee && agreedFor !== partnership?.id;
       router.replace({
         pathname: needsTerms ? '/join-confirm' : '/pairing-celebration',
         params: { name: freshlyPaired.partnerName },

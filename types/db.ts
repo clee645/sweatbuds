@@ -34,6 +34,9 @@ export type Partnership = {
   // instant are settled into the `wagers` table. Stamped at migration/insert
   // time (NOT NULL DEFAULT now()), so existing history is never backfilled.
   wager_ledger_since: string;
+  // When the invitee (user_b) signed the partner's terms on join-confirm. Set
+  // only through agree_to_partnership_terms(); null until they do.
+  invitee_agreed_at: string | null;
 };
 
 export type PartnershipAnchorHistory = {

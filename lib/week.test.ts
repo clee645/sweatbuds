@@ -40,6 +40,7 @@ function partnership(overrides: Partial<Partnership> = {}): Partnership {
     week_anchor_at: null,
     week_anchor_pending_at: null,
     wager_ledger_since: pairedAt.toISOString(),
+    invitee_agreed_at: null,
     timezone: LA,
     ...overrides,
   };

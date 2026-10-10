@@ -24,7 +24,7 @@ import { addZonedDays, deviceTimezone, zonedMidnightUtc } from './zonedTime';
 import type { Partnership, PartnershipAnchorHistory, Profile } from '@/types/db';
 
 const SELECT_COLUMNS =
-  'id, user_a, user_b, invite_code, status, weekly_target, wager_quantity, wager_text, wager_emoji, created_at, paired_at, week_anchor_at, week_anchor_pending_at, wager_ledger_since, timezone';
+  'id, user_a, user_b, invite_code, status, weekly_target, wager_quantity, wager_text, wager_emoji, created_at, paired_at, week_anchor_at, week_anchor_pending_at, wager_ledger_since, timezone, invitee_agreed_at';
 
 const ANCHOR_HISTORY_COLUMNS =
   'id, partnership_id, anchor_at, effective_until, created_at';
@@ -302,7 +302,14 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
           // Cold-start path: compare against AsyncStorage to see whether we've
           // ever shown the celebration for this partnership on this device.
           const seenId = await AsyncStorage.getItem(SEEN_PAIRING_KEY);
-          if (seenId !== next.id) {
+          // An invitee who already agreed (on this device or another) went
+          // through join-confirm into the celebration; a reinstall or new
+          // device shouldn't replay either.
+          const inviteeAlreadyJoined =
+            next.user_b === userId && Boolean(next.invitee_agreed_at);
+          if (inviteeAlreadyJoined && seenId !== next.id) {
+            await AsyncStorage.setItem(SEEN_PAIRING_KEY, next.id);
+          } else if (seenId !== next.id) {
             setFreshlyPaired({
               partnershipId: next.id,
               partnerId: nextPartner.id,
