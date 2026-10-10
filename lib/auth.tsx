@@ -17,6 +17,7 @@ import {
 
 import { registerPushToken, unregisterPushToken } from './notifications';
 import { posthog } from './posthog';
+import { clearUserCaches } from './offlineCache';
 import { captureException, clearUser, identifyUser } from './reporting';
 import {
   configureRevenueCat,
@@ -331,6 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await unregisterPushToken(userId).catch(() => undefined);
     }
     await clearWidget();
+    if (userId) await clearUserCaches(userId);
     await resetRevenueCatUser();
     await supabase.auth.signOut();
     posthog?.reset();

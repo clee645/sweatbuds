@@ -11,6 +11,7 @@ import {
 
 import { useAuth } from './auth';
 import { toUserMessage } from './errors';
+import { readCache, workoutsCacheKey, writeCache } from './offlineCache';
 import { captureException } from './reporting';
 import { usePartnership } from './partnership';
 import { posthog } from './posthog';
@@ -100,6 +101,13 @@ export async function deleteWorkout(workout: Workout): Promise<void> {
   });
 }
 
+type CachedWorkouts = {
+  // The feed scope these rows were fetched under (see partnershipKey below).
+  partnershipKey: string | null;
+  workouts: Workout[];
+  totalCount: number | null;
+};
+
 type WorkoutsContextValue = {
   workouts: Workout[];
   // All-time partnership-scoped workout count. Independent of the 50-row
@@ -117,7 +125,7 @@ const WorkoutsContext = createContext<WorkoutsContextValue | undefined>(undefine
 
 export function WorkoutsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { partnership } = usePartnership();
+  const { partnership, loading: partnershipLoading } = usePartnership();
   const userId = user?.id ?? null;
   // Re-fetch when the partnership identity changes — pairing flips RLS
   // visibility, so rows from the new partner suddenly become readable.
@@ -135,12 +143,48 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
   // screen — no skeleton flash on app re-open.
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loading = Boolean(userId) && !hasLoaded;
+  // Scope of the rows currently in `workouts`, once they came from the server.
+  // The cache is only written for live data, tagged with the scope it's for.
+  const [liveScope, setLiveScope] = useState<{ userId: string; key: string | null } | null>(
+    null,
+  );
+  // "userId|partnershipKey" whose cached rows are on screen.
+  const [cacheServedFor, setCacheServedFor] = useState<string | null>(null);
+  const scopeId = userId ? `${userId}|${partnershipKey ?? ''}` : null;
+  const loading = Boolean(userId) && !hasLoaded && cacheServedFor !== scopeId;
 
   // Reset the first-load gate when the user changes (sign out / sign in).
   useEffect(() => {
     setHasLoaded(false);
+    setLiveScope(null);
+    setCacheServedFor(null);
   }, [userId]);
+
+  // Paint last-known rows on a cold start instead of an empty feed: offline
+  // they're all there is, and online they cover the round-trip. Waits for the
+  // partnership so the rows match the scope home is about to render.
+  useEffect(() => {
+    if (!userId || partnershipLoading || hasLoaded) return;
+    let cancelled = false;
+    void readCache<CachedWorkouts>(workoutsCacheKey(userId)).then((cached) => {
+      if (cancelled || !cached || cached.partnershipKey !== partnershipKey) return;
+      setWorkouts(cached.workouts);
+      setTotalCount(cached.totalCount);
+      setCacheServedFor(`${userId}|${partnershipKey ?? ''}`);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, partnershipKey, partnershipLoading, hasLoaded]);
+
+  useEffect(() => {
+    if (!userId || !liveScope || liveScope.userId !== userId) return;
+    writeCache(workoutsCacheKey(userId), {
+      partnershipKey: liveScope.key,
+      workouts,
+      totalCount,
+    } satisfies CachedWorkouts);
+  }, [userId, liveScope, workouts, totalCount]);
 
   const refresh = useCallback(async () => {
     if (!userId) {
@@ -150,7 +194,9 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
       setHasLoaded(false);
       return;
     }
-    setError(null);
+    // Until the partnership resolves, partnershipKey is a guess (null = solo):
+    // fetching now fetches the wrong scope and then again once it lands.
+    if (partnershipLoading) return;
 
     // Scope by partnership_id so the home feed and totalCount only ever
     // surface the current partnership's photos. RLS would otherwise allow
@@ -182,12 +228,16 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
       setHasLoaded(true);
       return;
     }
+    // Cleared only on success: clearing up front showed the empty-state hero
+    // for the whole of a slow retry, which reads as data loss.
+    setError(null);
     setWorkouts((rowsResult.data ?? []) as Workout[]);
+    setLiveScope({ userId, key: partnershipKey });
     if (!countResult.error && typeof countResult.count === 'number') {
       setTotalCount(countResult.count);
     }
     setHasLoaded(true);
-  }, [userId, partnershipKey]);
+  }, [userId, partnershipKey, partnershipLoading]);
 
   useEffect(() => {
     void refresh();

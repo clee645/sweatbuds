@@ -11,6 +11,7 @@ import {
 } from 'react';
 
 import { useAuth } from './auth';
+import { partnerCoveredKey, partnershipCacheKey, readCache, writeCache } from './offlineCache';
 import { captureException } from './reporting';
 import { supabase } from './supabase';
 import {
@@ -38,11 +39,15 @@ const SEEN_PAIRING_KEY = 'sweatbuds:lastSeenPairingId';
 // the survivor had notifications off and missed both the realtime event and push).
 const LAST_ACTIVE_PARTNERSHIP_KEY = 'sweatbuds:lastActivePartnershipId';
 
-// Durable mirror of "my partner's subscription covers me", the same idea as the
-// server-side profiles.is_pro bridge. Access for a covered user hangs entirely
-// on reading the partner's profile; when that read fails they would otherwise
-// be shown the locked screen despite being paid for.
-const PARTNER_COVERED_KEY = 'sweatbuds:partnerCovered';
+// Pre-per-user location of the coverage flag (now partnerCoveredKey(uid)).
+// Removed on sight; it can't be attributed to an account.
+const LEGACY_PARTNER_COVERED_KEY = 'sweatbuds:partnerCovered';
+
+type CachedPartnership = {
+  partnership: Partnership | null;
+  partner: Profile | null;
+  anchorHistory: PartnershipAnchorHistory[];
+};
 
 function generateInviteCode(): string {
   let out = '';
@@ -105,19 +110,61 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
   const [partnership, setPartnership] = useState<Partnership | null>(null);
   const [partner, setPartner] = useState<Profile | null>(null);
   const [anchorHistory, setAnchorHistory] = useState<PartnershipAnchorHistory[]>([]);
+  // Durable mirror of "my partner's subscription covers me", the same idea as
+  // the server-side profiles.is_pro bridge. Access for a covered user hangs
+  // entirely on reading the partner's profile; when that read fails they would
+  // otherwise be shown the locked screen despite being paid for.
   const [partnerCovered, setPartnerCovered] = useState(false);
+  // userId whose on-disk state (coverage flag + last-known partnership) has
+  // been read. `loading` holds until it matches, so nothing decides first.
+  const [hydratedFor, setHydratedFor] = useState<string | null>(null);
+  // userId whose cached partnership is on screen, letting `loading` drop
+  // without waiting on the network.
+  const [cacheServedFor, setCacheServedFor] = useState<string | null>(null);
+  // userId the partnership fetch has succeeded for; only then is state worth
+  // writing back to the cache.
+  const [liveLoadedFor, setLiveLoadedFor] = useState<string | null>(null);
+  // Set once a live fetch has answered, so a slower disk read can't overwrite
+  // fresh state with stale.
+  const coverageKnownRef = useRef(false);
+  const partnershipKnownRef = useRef(false);
 
-  // Hydrate the coverage flag before the first fetch resolves, so a cold start
-  // offline doesn't lock out a covered user on the way in.
+  // Hydrate from disk before the first fetch resolves, so a cold start offline
+  // shows the real paired home (and doesn't lock out a covered user), and an
+  // online one paints without waiting on the round-trip. Keyed per user so a
+  // different account signing in on this device never inherits it.
   useEffect(() => {
+    coverageKnownRef.current = false;
+    partnershipKnownRef.current = false;
+    setPartnerCovered(false);
+    if (!userId) {
+      setHydratedFor(null);
+      setCacheServedFor(null);
+      setLiveLoadedFor(null);
+      return;
+    }
     let cancelled = false;
-    void AsyncStorage.getItem(PARTNER_COVERED_KEY).then((v) => {
-      if (!cancelled && v === 'true') setPartnerCovered(true);
+    void AsyncStorage.removeItem(LEGACY_PARTNER_COVERED_KEY).catch(() => undefined);
+    void Promise.all([
+      AsyncStorage.getItem(partnerCoveredKey(userId)).catch(() => null),
+      readCache<CachedPartnership>(partnershipCacheKey(userId)),
+    ]).then(([covered, cached]) => {
+      if (cancelled) return;
+      if (!coverageKnownRef.current && covered === 'true') setPartnerCovered(true);
+      if (!partnershipKnownRef.current && cached) {
+        partnershipRef.current = cached.partnership;
+        setPartnership(cached.partnership);
+        setPartner(cached.partner);
+        setAnchorHistory(cached.anchorHistory ?? []);
+        setCacheServedFor(userId);
+      }
+      setHydratedFor(userId);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
+
   // Stale-while-revalidate: `loading` flips to false after the first fetch
   // and stays false. Subsequent refreshes (foreground, realtime, push) update
   // partnership/partner state silently so the home screen doesn't flash to
@@ -125,7 +172,20 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [freshlyPaired, setFreshlyPaired] = useState<FreshlyPaired | null>(null);
   const [freshlyEnded, setFreshlyEnded] = useState<FreshlyEnded | null>(null);
-  const loading = Boolean(userId) && !hasLoaded;
+  const loading =
+    Boolean(userId) &&
+    (hydratedFor !== userId || (!hasLoaded && cacheServedFor !== userId));
+
+  // Keep the cache in step with every live change (refresh, realtime partner
+  // profile edits, local updates) once we've heard from the server.
+  useEffect(() => {
+    if (!userId || liveLoadedFor !== userId) return;
+    writeCache(partnershipCacheKey(userId), {
+      partnership,
+      partner,
+      anchorHistory,
+    } satisfies CachedPartnership);
+  }, [userId, liveLoadedFor, partnership, partner, anchorHistory]);
 
   // Reset the first-load gate when the user changes (sign out / sign in).
   useEffect(() => {
@@ -211,6 +271,8 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
       const nextPartner = await fetchPartner(userId, next);
       const nextHistory = next ? await fetchAnchorHistory(next.id) : [];
 
+      partnershipKnownRef.current = true;
+      setLiveLoadedFor(userId);
       partnershipRef.current = next;
       setPartnership(next);
       // Keep the known partner on a failed read rather than reporting "none".
@@ -219,14 +281,16 @@ export function PartnershipProvider({ children }: { children: ReactNode }) {
 
       // Refresh the durable coverage flag only when we actually know.
       if (!next || next.status !== 'active') {
+        coverageKnownRef.current = true;
         setPartnerCovered(false);
-        void AsyncStorage.removeItem(PARTNER_COVERED_KEY);
+        void AsyncStorage.removeItem(partnerCoveredKey(userId));
       } else if (nextPartner !== undefined) {
         const covered = nextPartner?.is_pro === true;
+        coverageKnownRef.current = true;
         setPartnerCovered(covered);
         void (covered
-          ? AsyncStorage.setItem(PARTNER_COVERED_KEY, 'true')
-          : AsyncStorage.removeItem(PARTNER_COVERED_KEY));
+          ? AsyncStorage.setItem(partnerCoveredKey(userId), 'true')
+          : AsyncStorage.removeItem(partnerCoveredKey(userId)));
       }
 
       // Detect a fresh pairing transition.

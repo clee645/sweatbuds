@@ -11,7 +11,8 @@ export type AccessGate = {
   // True when the user may use the app: a local App Review demo unlock, their
   // own active subscription, the durable profiles.is_pro bridge (survives
   // reinstall before RevenueCat re-confirms), or an active partner's
-  // subscription (one sub covers both).
+  // subscription (one sub covers both), including its last-known value when
+  // the partner's profile can't be read.
   unlocked: boolean;
   // True while subscription/partnership state is still resolving. Callers
   // should hold a splash/skeleton rather than flashing the locked screen.
@@ -23,15 +24,22 @@ export type AccessGate = {
 export function useAccessGate(): AccessGate {
   const { profile } = useAuth();
   const { isPro, loading: subscriptionLoading } = useSubscription();
-  const { partner, loading: partnershipLoading } = usePartnership();
+  const { partner, partnerCovered, loading: partnershipLoading } = usePartnership();
   const { unlocked: demoUnlocked, loading: demoLoading } = useDemoUnlocked();
 
   if (__DEV__ && DEV_FORCE_LOCKED) {
     return { unlocked: false, loading: false };
   }
 
+  // partnerCovered is the durable mirror of partner?.is_pro: offline on a cold
+  // start the partner's profile never loads, and without it a covered user
+  // was shown LockedHome.
   const unlocked =
-    demoUnlocked || isPro || profile?.is_pro === true || partner?.is_pro === true;
+    demoUnlocked ||
+    isPro ||
+    profile?.is_pro === true ||
+    partner?.is_pro === true ||
+    partnerCovered;
 
   // Once any source says unlocked there is nothing left to wait for, so don't
   // keep reporting `loading` and hold the caller on BrandedSplash. This matters
