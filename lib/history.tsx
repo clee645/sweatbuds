@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -41,6 +42,17 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const loading = Boolean(userId) && !hasLoaded;
 
+  // Scope of the latest render, and a counter of fetches started for it.
+  // Callers can hold an older `refresh` (WidgetSync fires one on push receipt
+  // and foreground alongside refreshPartnership), and this all-time query is
+  // slow enough that a fetch for the previous partnership could land after the
+  // current one and overwrite it — right after re-pairing, history lost the
+  // carried-over week until a relaunch.
+  const scope = `${userId ?? ''}|${partnershipId ?? ''}`;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const seqRef = useRef(0);
+
   // Reset first-load gate on user swap so loading state shows for the new user.
   useEffect(() => {
     setHasLoaded(false);
@@ -53,6 +65,9 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
       setHasLoaded(false);
       return;
     }
+    const fetchScope = `${userId}|${partnershipId ?? ''}`;
+    if (fetchScope !== scopeRef.current) return; // stale closure; the current scope fetches itself
+    const seq = ++seqRef.current;
     setError(null);
 
     // Show the user's OWN workouts across all time (their personal history
@@ -71,6 +86,8 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
     }
 
     const { data, error: fetchError } = await query;
+    // Only the newest fetch for the current scope may write.
+    if (seq !== seqRef.current || fetchScope !== scopeRef.current) return;
     if (fetchError) {
       captureException(fetchError, { operation: 'history_load' });
       setError(toUserMessage(fetchError, 'Could not load history.'));

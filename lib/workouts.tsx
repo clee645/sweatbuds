@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -151,6 +152,13 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
   // "userId|partnershipKey" whose cached rows are on screen.
   const [cacheServedFor, setCacheServedFor] = useState<string | null>(null);
   const scopeId = userId ? `${userId}|${partnershipKey ?? ''}` : null;
+  // Latest-render scope plus a counter of fetches started for it, so a fetch
+  // from an older `refresh` closure (WidgetSync's push/foreground fan-out) or
+  // an earlier, slower fetch can't overwrite newer rows. Same guard as
+  // lib/history.tsx.
+  const scopeRef = useRef(scopeId);
+  scopeRef.current = scopeId;
+  const seqRef = useRef(0);
   const loading = Boolean(userId) && !hasLoaded && cacheServedFor !== scopeId;
 
   // Reset the first-load gate when the user changes (sign out / sign in).
@@ -197,6 +205,9 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
     // Until the partnership resolves, partnershipKey is a guess (null = solo):
     // fetching now fetches the wrong scope and then again once it lands.
     if (partnershipLoading) return;
+    const fetchScope = `${userId}|${partnershipKey ?? ''}`;
+    if (fetchScope !== scopeRef.current) return;
+    const seq = ++seqRef.current;
 
     // Scope by partnership_id so the home feed and totalCount only ever
     // surface the current partnership's photos. RLS would otherwise allow
@@ -219,6 +230,7 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
       countQuery = countQuery.eq('user_id', userId);
     }
     const [rowsResult, countResult] = await Promise.all([rowsQuery, countQuery]);
+    if (seq !== seqRef.current || fetchScope !== scopeRef.current) return;
 
     if (rowsResult.error) {
       // Stored for display, so it has to be user-facing copy rather than the
