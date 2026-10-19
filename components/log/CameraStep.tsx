@@ -140,25 +140,32 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
     if (phase !== 'idle') return;
     if (!cameraRef.current) return;
 
+    // Shoot whichever lens is showing first, then flip to the other one. The
+    // user may have flipped to the back lens to frame the environment first.
+    const firstFacing = facing;
+    const secondFacing: CameraType = firstFacing === 'front' ? 'back' : 'front';
+    const phaseFor = (f: CameraType): Phase => (f === 'front' ? 'selfie' : 'environment');
+    const labelFor = (f: CameraType) => (f === 'front' ? 'Selfie' : 'Environment');
+
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setCaptureError(null);
-      setPhase('selfie');
+      setPhase(phaseFor(firstFacing));
 
       await waitForCameraReady();
       // Small settle so AF/AE has stabilized after preview start.
       await new Promise((r) => setTimeout(r, POST_READY_SETTLE_MS));
-      const selfie = await withTimeout(
+      const first = await withTimeout(
         cameraRef.current.takePictureAsync({ quality: 0.9 }),
         CAPTURE_TIMEOUT_MS,
-        'Selfie capture',
+        `${labelFor(firstFacing)} capture`,
       );
-      const selfieUri = selfie?.uri;
-      if (!selfieUri) throw new Error('Selfie capture failed');
+      const firstUri = first?.uri;
+      if (!firstUri) throw new Error(`${labelFor(firstFacing)} capture failed`);
 
-      // Switch to back camera; CameraView remounts on facing change.
-      setPhase('environment');
-      setFacing('back');
+      // Switch to the other lens; CameraView remounts on facing change.
+      setPhase(phaseFor(secondFacing));
+      setFacing(secondFacing);
 
       await new Promise((resolve) => setTimeout(resolve, REPOSITION_MS));
       await waitForCameraReady();
@@ -169,16 +176,20 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
       if (!cameraRef.current) throw new Error('Camera ref lost after lens flip');
 
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const env = await withTimeout(
+      const second = await withTimeout(
         cameraRef.current.takePictureAsync({ quality: 0.9 }),
         CAPTURE_TIMEOUT_MS,
-        'Environment capture',
+        `${labelFor(secondFacing)} capture`,
       );
-      const environmentUri = env?.uri;
-      if (!environmentUri) throw new Error('Environment capture failed');
+      const secondUri = second?.uri;
+      if (!secondUri) throw new Error(`${labelFor(secondFacing)} capture failed`);
 
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onCapturesComplete({ selfieUri, environmentUri });
+      onCapturesComplete(
+        firstFacing === 'front'
+          ? { selfieUri: firstUri, environmentUri: secondUri }
+          : { selfieUri: secondUri, environmentUri: firstUri },
+      );
     } catch (e) {
       // Reset so the user can try again. Without a visible message this reads
       // as a mis-tap — console.warn is stripped from release builds, so the
@@ -189,7 +200,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       if (__DEV__) console.warn('Capture failed', e);
     }
-  }, [onCapturesComplete, phase, waitForCameraReady]);
+  }, [facing, onCapturesComplete, phase, waitForCameraReady]);
 
   const handleFlip = useCallback(() => {
     if (phase !== 'idle') return;
