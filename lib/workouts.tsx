@@ -26,6 +26,7 @@ type CreateWorkoutInput = {
   partnershipId?: string | null;
   selfieUri: string;
   environmentUri: string;
+  primaryPhoto: 'selfie' | 'environment';
   caption: string | null;
   // Stable across retries of the same capture session. When the caller supplies
   // it, a retry re-puts the same two storage paths (uploadWorkoutImage upserts)
@@ -71,6 +72,7 @@ export async function createWorkout(input: CreateWorkoutInput): Promise<Workout>
       partnership_id: input.partnershipId ?? null,
       selfie_path: selfiePath,
       environment_path: environmentPath,
+      primary_photo: input.primaryPhoto,
       caption,
       // The device's zone RIGHT NOW, not the stored profile value — a workout
       // logged while travelling belongs to the day where it happened. A trigger
@@ -78,7 +80,7 @@ export async function createWorkout(input: CreateWorkoutInput): Promise<Workout>
       // choose the date itself.
       logged_tz: deviceTimezone(),
     })
-    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
+    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz, primary_photo')
     .single();
 
   if (error || !data) {
@@ -215,7 +217,7 @@ export function WorkoutsProvider({ children }: { children: ReactNode }) {
     // partnership workouts to a new partner.
     let rowsQuery = supabase
       .from('workouts')
-      .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
+      .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz, primary_photo')
       .order('logged_at', { ascending: false })
       .limit(50);
     let countQuery = supabase

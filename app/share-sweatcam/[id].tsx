@@ -76,7 +76,8 @@ export default function ShareSweatcamScreen() {
     : null;
   // The caller passes whichever photo it was showing large, so the exported
   // card matches what the user was looking at.
-  const swapped = primary === 'environment' && Boolean(environmentUri);
+  const swapped =
+    (primary ?? workout.primary_photo) === 'environment' && Boolean(environmentUri);
   const mainUri = swapped ? environmentUri : selfieUri;
   const insetUri = swapped ? selfieUri : environmentUri;
   // Storage paths pair with the URIs above so each image keeps a stable

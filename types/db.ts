@@ -63,6 +63,10 @@ export type Workout = {
   // The logger's device zone at that moment. Input to the stamping trigger;
   // kept for debugging and future display, not read by week math.
   logged_tz: string | null;
+  // Which photo is shown large: whichever was taken first, or the user's swap
+  // on the preview. Optional because offline caches can hold rows fetched
+  // before the column existed; treat missing as 'selfie'.
+  primary_photo?: 'selfie' | 'environment';
 };
 
 export type WorkoutComment = {

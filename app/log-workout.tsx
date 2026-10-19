@@ -14,6 +14,7 @@ import { captureException } from '@/lib/reporting';
 import { colors } from '@/lib/theme';
 import { useWorkoutSync } from '@/lib/workoutSync';
 import { createWorkout, useWorkouts } from '@/lib/workouts';
+import type { PostPrimary } from '@/components/log/PostComposition';
 import type { Workout } from '@/types/db';
 
 type Step = 'camera' | 'preview' | 'success';
@@ -28,6 +29,8 @@ export default function LogWorkoutScreen() {
   const [step, setStep] = useState<Step>('camera');
   const [selfieUri, setSelfieUri] = useState<string | null>(null);
   const [environmentUri, setEnvironmentUri] = useState<string | null>(null);
+  // Starts as whichever photo was shot first; the preview's swap changes it.
+  const [primaryPhoto, setPrimaryPhoto] = useState<PostPrimary>('selfie');
   const [caption, setCaption] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -39,10 +42,19 @@ export default function LogWorkoutScreen() {
   const workoutIdRef = useRef<string | null>(null);
 
   const handleCapturesComplete = useCallback(
-    ({ selfieUri: s, environmentUri: e }: { selfieUri: string; environmentUri: string }) => {
+    ({
+      selfieUri: s,
+      environmentUri: e,
+      primaryPhoto: first,
+    }: {
+      selfieUri: string;
+      environmentUri: string;
+      primaryPhoto: PostPrimary;
+    }) => {
       workoutIdRef.current = randomUUID();
       setSelfieUri(s);
       setEnvironmentUri(e);
+      setPrimaryPhoto(first);
       setStep('preview');
     },
     [],
@@ -76,6 +88,7 @@ export default function LogWorkoutScreen() {
           partnership && partnership.status === 'active' ? partnership.id : null,
         selfieUri,
         environmentUri,
+        primaryPhoto,
         caption: caption.trim() || null,
         workoutId: workoutIdRef.current ?? undefined,
       });
@@ -100,6 +113,7 @@ export default function LogWorkoutScreen() {
     caption,
     environmentUri,
     partnership,
+    primaryPhoto,
     selfieUri,
     submitting,
     user,
@@ -127,6 +141,8 @@ export default function LogWorkoutScreen() {
         <PreviewStep
           selfieUri={selfieUri}
           environmentUri={environmentUri}
+          primary={primaryPhoto}
+          onPrimaryChange={setPrimaryPhoto}
           caption={caption}
           submitting={submitting}
           errorMessage={errorMessage}

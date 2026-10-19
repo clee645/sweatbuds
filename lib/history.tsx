@@ -83,7 +83,7 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
     // neither clause for them, and the partnership-scoped RLS (0022) blocks them.
     let query = supabase
       .from('workouts')
-      .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
+      .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz, primary_photo')
       .order('logged_at', { ascending: false });
     if (partnershipId) {
       query = query.or(`user_id.eq.${userId},partnership_id.eq.${partnershipId}`);

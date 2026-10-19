@@ -50,7 +50,7 @@ type LedgerRow = {
 export const fetchPartnershipWorkouts: LoadWorkouts = async (partnershipId, range) => {
   const { data, error } = await supabase
     .from('workouts')
-    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
+    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz, primary_photo')
     .eq('partnership_id', partnershipId)
     .gte('logged_at', range.fromIso)
     .lt('logged_at', range.toIso);

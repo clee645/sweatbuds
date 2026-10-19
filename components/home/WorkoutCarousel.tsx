@@ -286,6 +286,7 @@ export function WorkoutCarousel({ workouts, archiving = false }: Props) {
           : null
       }
       caption={workout.caption}
+      primary={workout.primary_photo}
       showCommentIcon
       unreadCount={unreadCount(
         workout.id,

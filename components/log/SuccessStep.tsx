@@ -93,6 +93,7 @@ export function SuccessStep({
           <PostComposition
             selfieUri={selfieUri}
             environmentUri={environmentUri}
+            primary={workout.primary_photo ?? 'selfie'}
             caption={workout.caption}
             style={styles.composition}
           />

@@ -25,6 +25,8 @@ import { PostComposition, type PostPrimary } from './PostComposition';
 type Props = {
   selfieUri: string;
   environmentUri: string;
+  primary: PostPrimary;
+  onPrimaryChange: (next: PostPrimary) => void;
   caption: string;
   submitting: boolean;
   errorMessage: string | null;
@@ -36,6 +38,8 @@ type Props = {
 export function PreviewStep({
   selfieUri,
   environmentUri,
+  primary,
+  onPrimaryChange,
   caption,
   submitting,
   errorMessage,
@@ -48,7 +52,6 @@ export function PreviewStep({
   // the first open, which pushed the header and Log button off screen.
   const insets = useSafeAreaInsets();
   const [editingCaption, setEditingCaption] = useState(false);
-  const [primary, setPrimary] = useState<PostPrimary>('selfie');
 
   const screenW = Dimensions.get('window').width;
   const cardWidth = screenW - spacing.lg * 2;
@@ -67,7 +70,7 @@ export function PreviewStep({
   }));
 
   const handleSwap = () => {
-    setPrimary((p) => (p === 'selfie' ? 'environment' : 'selfie'));
+    onPrimaryChange(primary === 'selfie' ? 'environment' : 'selfie');
   };
 
   const captionPlaceholder = 'Add a caption';

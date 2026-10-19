@@ -30,7 +30,12 @@ type Phase = 'idle' | 'selfie' | 'environment';
 
 type Props = {
   active: boolean;
-  onCapturesComplete: (input: { selfieUri: string; environmentUri: string }) => void;
+  // primaryPhoto is whichever was shot first; it becomes the large photo.
+  onCapturesComplete: (input: {
+    selfieUri: string;
+    environmentUri: string;
+    primaryPhoto: 'selfie' | 'environment';
+  }) => void;
 };
 
 const REPOSITION_MS = 1000;
@@ -187,8 +192,8 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onCapturesComplete(
         firstFacing === 'front'
-          ? { selfieUri: firstUri, environmentUri: secondUri }
-          : { selfieUri: secondUri, environmentUri: firstUri },
+          ? { selfieUri: firstUri, environmentUri: secondUri, primaryPhoto: 'selfie' }
+          : { selfieUri: secondUri, environmentUri: firstUri, primaryPhoto: 'environment' },
       );
     } catch (e) {
       // Reset so the user can try again. Without a visible message this reads
@@ -234,6 +239,7 @@ export function CameraStep({ active, onCapturesComplete }: Props) {
       onCapturesComplete({
         selfieUri: selfie.assets[0].uri,
         environmentUri: env.assets[0].uri,
+        primaryPhoto: 'selfie',
       });
     } catch (e) {
       captureException(e, { operation: 'photo_pick' });

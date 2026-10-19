@@ -76,12 +76,14 @@ export default function DayMemoryScreen() {
   const listRef = useRef<FlatList<Workout>>(null);
 
   // Mirrors photo/[id]: which photo is shown large, per workout, screen-local.
+  // Starts from the photo the poster made main.
   const [primaryById, setPrimaryById] = useState<Record<string, PhotoPrimary>>({});
-  const primaryFor = (wid: string): PhotoPrimary => primaryById[wid] ?? 'selfie';
-  const togglePrimary = (wid: string) =>
+  const primaryFor = (w: Workout): PhotoPrimary =>
+    primaryById[w.id] ?? w.primary_photo ?? 'selfie';
+  const togglePrimary = (w: Workout) =>
     setPrimaryById((m) => ({
       ...m,
-      [wid]: (m[wid] ?? 'selfie') === 'selfie' ? 'environment' : 'selfie',
+      [w.id]: primaryFor(w) === 'selfie' ? 'environment' : 'selfie',
     }));
 
   useEffect(() => {
@@ -160,7 +162,7 @@ export default function DayMemoryScreen() {
   const handleShare = () => {
     if (!active) return;
     setMenuOpen(false);
-    router.push(`/share-sweatcam/${active.id}?primary=${primaryFor(active.id)}`);
+    router.push(`/share-sweatcam/${active.id}?primary=${primaryFor(active)}`);
   };
 
   const handleSave = async () => {
@@ -168,7 +170,7 @@ export default function DayMemoryScreen() {
     setMenuOpen(false);
     // Save whichever photo is currently shown large.
     const path =
-      primaryFor(active.id) === 'environment' && active.environment_path
+      primaryFor(active) === 'environment' && active.environment_path
         ? active.environment_path
         : active.selfie_path;
     const uri = uriMap[path];
@@ -270,8 +272,8 @@ export default function DayMemoryScreen() {
               cardWidth={cardWidth}
               cardHeight={cardHeight}
               compactCaption={isKeyboardOpen}
-              primary={primaryFor(item.id)}
-              onSwap={() => togglePrimary(item.id)}
+              primary={primaryFor(item)}
+              onSwap={() => togglePrimary(item)}
             />
           )}
         />

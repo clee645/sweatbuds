@@ -116,7 +116,7 @@ export async function syncPartnerLatestToWidget(args: {
   // your partner.
   const { data, error } = await supabase
     .from('workouts')
-    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz')
+    .select('id, user_id, partnership_id, selfie_path, environment_path, caption, logged_at, logged_date, logged_tz, primary_photo')
     .eq('user_id', args.partner.id)
     .order('logged_at', { ascending: false })
     .limit(20);
