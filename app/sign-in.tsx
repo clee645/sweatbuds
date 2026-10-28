@@ -25,6 +25,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { GoogleLogo } from '@/components/GoogleLogo';
 import { NoAccountError, useAuth } from '@/lib/auth';
+import { useStartDemo } from '@/lib/demoMode';
 import { toUserMessage } from '@/lib/errors';
 import { colors, radii, spacing, typography } from '@/lib/theme';
 
@@ -33,9 +34,10 @@ type Provider = 'apple' | 'google';
 export default function SignInScreen() {
   const { session, signInWithApple, signInWithGoogle } = useAuth();
   const router = useRouter();
-  const [submitting, setSubmitting] = useState<Provider | null>(null);
+  const [submitting, setSubmitting] = useState<Provider | 'demo' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
+  const demo = useStartDemo();
 
   // Don't redirect while a sign-in is in flight or after we've ejected a
   // just-created account — the OAuth call briefly sets a session before we sign
@@ -45,6 +47,18 @@ export default function SignInScreen() {
   }
 
   const goToOnboarding = () => router.replace('/onboarding/welcome');
+
+  const handleDemo = async () => {
+    if (submitting) return;
+    setError(null);
+    setNoAccount(false);
+    setSubmitting('demo');
+    try {
+      await demo.start();
+    } finally {
+      setSubmitting(null);
+    }
+  };
 
   const handlePress = async (provider: Provider) => {
     if (submitting) return;
@@ -139,7 +153,30 @@ export default function SignInScreen() {
           )}
         </Pressable>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Pressable
+          onPress={handleDemo}
+          disabled={submitting !== null}
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.demoBtn,
+            pressed && styles.pressed,
+            submitting !== null && submitting !== 'demo' && styles.disabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Explore the demo without signing in"
+        >
+          {submitting === 'demo' ? (
+            <ActivityIndicator color={colors.textMuted} />
+          ) : (
+            <Text style={styles.demoText}>
+              Just looking? <Text style={styles.demoLink}>Explore the demo</Text>
+            </Text>
+          )}
+        </Pressable>
+
+        {error || demo.error ? (
+          <Text style={styles.error}>{error ?? demo.error}</Text>
+        ) : null}
 
         <Text style={styles.fineprint}>
           By continuing you agree to our{' '}
@@ -310,6 +347,20 @@ const styles = StyleSheet.create({
   },
   googleLabel: {
     color: colors.text,
+  },
+  demoBtn: {
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  demoText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 14,
+  },
+  demoLink: {
+    color: colors.accent,
+    fontWeight: '600',
   },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.6 },

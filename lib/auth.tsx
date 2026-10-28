@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { setDemoUnlocked } from './demoMode';
 import { registerPushToken, unregisterPushToken } from './notifications';
 import { posthog } from './posthog';
 import { clearUserCaches } from './offlineCache';
@@ -332,6 +333,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await unregisterPushToken(userId).catch(() => undefined);
     }
     await clearWidget();
+    // The demo's local unlock belongs to the demo session; don't let it carry
+    // over to whoever signs in next on this device.
+    await setDemoUnlocked(false);
     if (userId) await clearUserCaches(userId);
     await resetRevenueCatUser();
     await supabase.auth.signOut();

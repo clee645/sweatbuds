@@ -1,20 +1,27 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OnboardingButton } from '@/components/onboarding/OnboardingButton';
+import { useStartDemo } from '@/lib/demoMode';
 import { setOnboardingSeen } from '@/lib/onboarding';
 import { colors, spacing, typography } from '@/lib/theme';
 
 // Onboarding screen 2 — the entry screen. No progress header.
 export default function WelcomeScreen() {
   const router = useRouter();
+  const demo = useStartDemo();
 
   const handleSignIn = async () => {
     await setOnboardingSeen();
     router.replace('/sign-in');
+  };
+
+  const handleDemo = async () => {
+    if (demo.starting) return;
+    if (await demo.start()) router.replace('/');
   };
 
   return (
@@ -54,6 +61,23 @@ export default function WelcomeScreen() {
             Already have an account? <Text style={styles.signInLink}>Sign in</Text>
           </Text>
         </Pressable>
+        <Pressable
+          onPress={handleDemo}
+          disabled={demo.starting}
+          hitSlop={8}
+          style={styles.signInRow}
+          accessibilityRole="button"
+          accessibilityLabel="Explore the demo without signing in"
+        >
+          {demo.starting ? (
+            <ActivityIndicator color={colors.textMuted} />
+          ) : (
+            <Text style={styles.signInText}>
+              Just looking? <Text style={styles.signInLink}>Explore the demo</Text>
+            </Text>
+          )}
+        </Pressable>
+        {demo.error ? <Text style={styles.demoError}>{demo.error}</Text> : null}
       </View>
     </SafeAreaView>
   );
@@ -117,5 +141,10 @@ const styles = StyleSheet.create({
   signInLink: {
     color: colors.accent,
     fontWeight: '600',
+  },
+  demoError: {
+    ...typography.caption,
+    color: colors.danger,
+    textAlign: 'center',
   },
 });

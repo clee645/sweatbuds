@@ -1,5 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+
+import { setOnboardingSeen, setPaywallSeen } from './onboarding';
+import { captureException } from './reporting';
+import { supabase } from './supabase';
 
 // App Review demo bypass.
 //
@@ -18,6 +22,10 @@ import { useEffect, useState } from 'react';
 // Set EXPO_PUBLIC_DEMO_ACCESS_CODE to enable; leave it unset in builds where
 // you don't want a bypass to exist at all. Document the active code in the
 // App Review notes.
+//
+// The "Explore the demo" button (useStartDemo below) reuses the same local
+// unlock: the demo-session edge function signs into a freshly seeded, pre-paired
+// demo account that is deliberately NOT pro, so it can't cover a real partner.
 
 const STORAGE_KEY = 'demo_unlocked';
 const DEMO_CODE = process.env.EXPO_PUBLIC_DEMO_ACCESS_CODE?.trim().toUpperCase() || null;
@@ -85,4 +93,47 @@ export function useDemoUnlocked(): { unlocked: boolean; loading: boolean } {
   }, []);
 
   return { unlocked, loading };
+}
+
+type DemoSessionResponse = { access_token: string; refresh_token: string };
+
+/**
+ * Sign into the shared App Review demo account — no credentials needed. The
+ * edge function re-seeds it (partner, history, comments, wagers) relative to
+ * today on every call, so each tap starts from the same full-featured state.
+ */
+export function useStartDemo(): {
+  start: () => Promise<boolean>;
+  starting: boolean;
+  error: string | null;
+} {
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const start = useCallback(async () => {
+    setStarting(true);
+    setError(null);
+    try {
+      const { data, error: invokeError } =
+        await supabase.functions.invoke<DemoSessionResponse>('demo-session');
+      if (invokeError || !data?.access_token) {
+        throw invokeError ?? new Error('Demo session missing tokens');
+      }
+      // Unlock and skip the funnel BEFORE the session lands, so the drawer's
+      // gate sees an unlocked user and never flashes the paywall.
+      await Promise.all([setDemoUnlocked(true), setOnboardingSeen(), setPaywallSeen()]);
+      const { error: sessionError } = await supabase.auth.setSession(data);
+      if (sessionError) throw sessionError;
+      return true;
+    } catch (e) {
+      await setDemoUnlocked(false);
+      captureException(e, { operation: 'demo_session' });
+      setError("Couldn't open the demo. Check your connection and try again.");
+      return false;
+    } finally {
+      setStarting(false);
+    }
+  }, []);
+
+  return { start, starting, error };
 }
