@@ -23,7 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { GoogleLogo } from '@/components/GoogleLogo';
+import { AuthButton } from '@/components/AuthButton';
 import { NoAccountError, useAuth } from '@/lib/auth';
 import { useStartDemo } from '@/lib/demoMode';
 import { toUserMessage } from '@/lib/errors';
@@ -108,50 +108,22 @@ export default function SignInScreen() {
 
       <View style={styles.footer}>
         {Platform.OS === 'ios' ? (
-          <Pressable
-            onPress={() => handlePress('apple')}
+          <AuthButton
+            provider="apple"
+            label="Continue with Apple"
+            loading={submitting === 'apple'}
             disabled={submitting !== null}
-            style={({ pressed }) => [
-              styles.authBtn,
-              styles.appleBtn,
-              pressed && styles.pressed,
-              submitting !== null && styles.disabled,
-            ]}
-          >
-            {submitting === 'apple' ? (
-              <ActivityIndicator color="#111111" />
-            ) : (
-              <>
-                <Ionicons name="logo-apple" size={20} color="#111111" />
-                <Text style={[styles.authLabel, styles.appleLabel]}>
-                  Continue with Apple
-                </Text>
-              </>
-            )}
-          </Pressable>
+            onPress={() => handlePress('apple')}
+          />
         ) : null}
 
-        <Pressable
-          onPress={() => handlePress('google')}
+        <AuthButton
+          provider="google"
+          label="Continue with Google"
+          loading={submitting === 'google'}
           disabled={submitting !== null}
-          style={({ pressed }) => [
-            styles.authBtn,
-            styles.googleBtn,
-            pressed && styles.pressed,
-            submitting !== null && styles.disabled,
-          ]}
-        >
-          {submitting === 'google' ? (
-            <ActivityIndicator color={colors.text} />
-          ) : (
-            <>
-              <GoogleLogo size={20} />
-              <Text style={[styles.authLabel, styles.googleLabel]}>
-                Continue with Google
-              </Text>
-            </>
-          )}
-        </Pressable>
+          onPress={() => handlePress('google')}
+        />
 
         <Pressable
           onPress={handleDemo}
@@ -321,32 +293,6 @@ const styles = StyleSheet.create({
   footer: {
     paddingBottom: spacing.xxxl + spacing.md,
     gap: spacing.md,
-  },
-  authBtn: {
-    height: 54,
-    borderRadius: radii.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  appleBtn: {
-    backgroundColor: '#F4F1EA',
-  },
-  googleBtn: {
-    backgroundColor: colors.cardElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  authLabel: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  appleLabel: {
-    color: '#111111',
-  },
-  googleLabel: {
-    color: colors.text,
   },
   demoBtn: {
     height: 32,

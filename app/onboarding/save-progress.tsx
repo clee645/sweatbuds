@@ -1,22 +1,15 @@
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AuthButton } from '@/components/AuthButton';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
 import { useAuth } from '@/lib/auth';
 import { toUserMessage } from '@/lib/errors';
 import { setOnboardingSeen } from '@/lib/onboarding';
-import { colors, radii, spacing, typography } from '@/lib/theme';
+import { colors, spacing, typography } from '@/lib/theme';
 
 type Provider = 'apple' | 'google';
 
@@ -63,7 +56,7 @@ export default function SaveProgressScreen() {
         <View style={styles.buttons}>
           {Platform.OS === 'ios' ? (
             <AuthButton
-              icon="logo-apple"
+              provider="apple"
               label="Sign up with Apple"
               loading={submitting === 'apple'}
               disabled={submitting !== null}
@@ -71,7 +64,7 @@ export default function SaveProgressScreen() {
             />
           ) : null}
           <AuthButton
-            icon="logo-google"
+            provider="google"
             label="Sign up with Google"
             loading={submitting === 'google'}
             disabled={submitting !== null}
@@ -86,41 +79,6 @@ export default function SaveProgressScreen() {
         <Text style={styles.caption}>Your data is private and secure.</Text>
       </View>
     </SafeAreaView>
-  );
-}
-
-function AuthButton({
-  icon,
-  label,
-  loading,
-  disabled,
-  onPress,
-}: {
-  icon: 'logo-apple' | 'logo-google';
-  label: string;
-  loading: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.btn,
-        pressed && !disabled && styles.pressed,
-        disabled && styles.btnDisabled,
-      ]}
-    >
-      {loading ? (
-        <ActivityIndicator color="#1F1F1F" />
-      ) : (
-        <>
-          <Ionicons name={icon} size={20} color="#1F1F1F" />
-          <Text style={styles.btnLabel}>{label}</Text>
-        </>
-      )}
-    </Pressable>
   );
 }
 
@@ -152,22 +110,6 @@ const styles = StyleSheet.create({
   buttons: {
     gap: spacing.lg,
     paddingHorizontal: spacing.xxl,
-  },
-  btn: {
-    height: 54,
-    borderRadius: radii.pill,
-    backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  btnDisabled: { opacity: 0.6 },
-  pressed: { opacity: 0.85 },
-  btnLabel: {
-    color: '#1F1F1F',
-    fontSize: 16,
-    fontWeight: '600',
   },
   error: {
     ...typography.caption,
